@@ -2,33 +2,33 @@
 #ifndef __ST7735_H__
 #define __ST7735_H__
 
-#include "fonts.h"
+#include "шрифты.х"
 #include <stdbool.h>
 
-#define ST7735_MADCTL_MY  0x80
-#define ST7735_MADCTL_MX  0x40
-#define ST7735_MADCTL_MV  0x20
-#define ST7735_MADCTL_ML  0x10
+#define ST7735_MADCTL_MY 0x80
+#define ST7735_MADCTL_MX 0x40
+#define ST7735_MADCTL_MV 0x20
+#define ST7735_MADCTL_ML 0x10
 #define ST7735_MADCTL_RGB 0x00
 #define ST7735_MADCTL_BGR 0x08
-#define ST7735_MADCTL_MH  0x04
+#define ST7735_MADCTL_MH 0x04
 
-/*** Redefine if necessary ***/
+/*** При необходимости переопределить ***/
 #define ST7735_SPI_PORT hspi3
-extern SPI_HandleTypeDef ST7735_SPI_PORT;
+новый SPI_HandleTypeDef ST7735_SPI_PORT;
 
-#define ST7735_RES_Pin       GPIO_PIN_8
+#define ST7735_RES_Pin GPIO_PIN_8
 #define ST7735_RES_GPIO_Port GPIOB
-#define ST7735_CS_Pin        GPIO_PIN_6
-#define ST7735_CS_GPIO_Port  GPIOB
-#define ST7735_DC_Pin        GPIO_PIN_7
-#define ST7735_DC_GPIO_Port  GPIOB
+#define ST7735_CS_Pin GPIO_PIN_6
+#define ST7735_CS_GPIO_Port GPIOB
+#define ST7735_DC_Pin GPIO_PIN_7
+#define ST7735_DC_GPIO_Port GPIOB
 
-// AliExpress/eBay 1.8" display, default orientation
+//Дисплей AliExpress/eBay 1,8", интернет-магазин по интернет-магазину
 /*
 #define ST7735_IS_160X128 1
-#define ST7735_WIDTH  128
-#define ST7735_HEIGHT 160
+#define ST7735_ШИРИНА 128
+#define ST7735_ВЫСОТА 160
 #define ST7735_XSTART 0
 #define ST7735_YSTART 0
 #define ST7735_ROTATION (ST7735_MADCTL_MX | ST7735_MADCTL_MY)
