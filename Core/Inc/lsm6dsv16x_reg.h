@@ -1,39 +1,39 @@
 /**
-  ******************************************************************************
-  * @file    lsm6dsv16x_reg.h
-  * @author  Sensors Software Solution Team
-  * @brief   This file contains all the functions prototypes for the
-  *          lsm6dsv16x_reg.c driver.
-  ******************************************************************************
-  * @attention
+ ******************************************************************
+ * @файл lsm6dsv16x_reg.h
+ * @author Команда разработчиков программного обеспечения для датчиков
+ * @brief Этот файл содержит все прототипы функций
+ * драйвер lsm6dsv16x_reg.c.
+ ******************************************************************
+ * @внимание
   *
-  * Copyright (c) 2024 STMicroelectronics.
-  * All rights reserved.
+ * Авторские права (c) 2024 STMicroelectronics.
+ * Все права защищены.
   *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
+ * Это программное обеспечение лицензируется на условиях, которые можно найти в файле LICENSE
+ * в корневом каталоге этого программного компонента.
+ * Если в комплект поставки данного программного обеспечения не входит файл LICENSE, он предоставляется «КАК ЕСТЬ».
   *
-  ******************************************************************************
-  */
+ ******************************************************************
+ */
 
-/* Define to prevent recursive inclusion -------------------------------------*/
+/* Определите, чтобы предотвратить рекурсивное включение ----------------------------------*/
 #ifndef LSM6DSV16X_REGS_H
 #define LSM6DSV16X_REGS_H
 
 #ifdef __cplusplus
-extern "C" {
+внешний "С" {
 #endif
 
-/* Includes ------------------------------------------------------------------*/
+/* Включает ---------------------------------------------------------------*/
 #include <stdint.h>
 #include <stddef.h>
-#include <math.h>
+#include <математика.h>
 
 /** @addtogroup LSM6DSV16X
-  * @{
+ * @{
   *
-  */
+ */
 
 /** @defgroup endiannes_def Endianness definitions
   * @{
