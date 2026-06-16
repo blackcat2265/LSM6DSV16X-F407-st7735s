@@ -53,108 +53,56 @@
 /* USER CODE BEGIN PV */
 stmdev_ctx_t dev_ctx;
 volatile uint32_t imu_irq_cnt = 0;
-volatile uint32_t qvar_irq_cnt = 0;
 volatile uint32_t drdy_cnt = 0;
 volatile uint8_t accel_ready = 0;
 volatile uint32_t accel_ready_cnt = 0;
-volatile uint8_t fifo_event = 0;
-volatile uint8_t imu_data_ready = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-
 /* USER CODE BEGIN PFP */
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if (GPIO_Pin == GPIO_PIN_13) // Это ваш пин PE13 (INT1)
-    {
-        imu_irq_cnt++;       // Ваш старый счетчик прерываний
-        fifo_event = 1;      // Ваш старый флаг
-
-        imu_data_ready = 1;  // НОВЫЙ ФЛАГ для запуска обработки SFLP в while(1)
-    }
-}
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-// Глобальные структуры данных
-stmdev_ctx_t dev_ctx;
-
-typedef struct {
-    float roll;
-    float pitch;
-    float yaw;
-} EulerAngles_t;
-
-static void platform_delay(uint32_t ms)
-{
-    HAL_Delay(ms);
-}
-
 static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
 {
+    uint8_t tx_buf[33];
+
+    tx_buf[0] = reg;
+    if (len > 1) {
+        tx_buf[0] |= 0x40;
+    }
+    memcpy(&tx_buf[1], bufp, len);
+
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-    // Для LSM6DSV16X бит 0x40 не нужен, автоинкремент работает аппаратно
-    HAL_SPI_Transmit(handle, &reg, 1, 1000);
-    HAL_SPI_Transmit(handle, (uint8_t*)bufp, len, 1000);
+    HAL_StatusTypeDef status = HAL_SPI_Transmit(handle, tx_buf, len + 1, 100);
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-    return 0;
+
+    return (status == HAL_OK) ? 0 : -1;
 }
 
 static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len)
 {
-    uint8_t reg_read = reg | 0x80; // Бит чтения SPI
+    uint8_t tx_buf[33];
+    uint8_t rx_buf[33];
+
+    tx_buf[0] = reg | 0x80;
+    memset(&tx_buf[1], 0x00, len);
 
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-    HAL_SPI_Transmit(handle, &reg_read, 1, 1000);
-    // Прямой прием в буфер драйвера без ограничений в 32 байта
-    HAL_SPI_Receive(handle, bufp, len, 1000);
+    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(handle, tx_buf, rx_buf, len + 1, 100);
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 
-    return 0;
-}
-
-// Функция декодирования кватерниона SFLP в углы
-EulerAngles_t LSM6DSV16X_Decode_SFLP(float sflp_x, float sflp_y, float sflp_z)
-{
-    EulerAngles_t angles;
-
-    // Векторная часть кватерниона
-    float qx = sflp_x;
-    float qy = sflp_y;
-    float qz = sflp_z;
-
-    // Восстанавливаем скалярную часть W
-    float t = 1.0f - (qx * qx + qy * qy + qz * qz);
-    float qw = (t > 0.0f) ? sqrtf(t) : 0.0f;
-
-    // Расчет Roll (вокруг оси X крен)
-    float sinr_cosp = 2.0f * (qw * qx + qy * qz);
-    float cosr_cosp = 1.0f - 2.0f * (qx * qx + qy * qy);
-    angles.roll = atan2f(sinr_cosp, cosr_cosp) * (180.0f / M_PI);
-
-    // Расчет Pitch (вокруг оси Y тангаж)
-    float sinp = 2.0f * (qw * qy - qz * qx);
-    if (fabsf(sinp) >= 1.0f) {
-        angles.pitch = copysignf(M_PI / 2.0f, sinp) * (180.0f / M_PI);
-    } else {
-        angles.pitch = asinf(sinp) * (180.0f / M_PI);
+    if (status != HAL_OK) {
+        return -1;
     }
 
-    // Расчет Yaw (вокруг оси Z рысканье)
-    float siny_cosp = 2.0f * (qw * qz + qx * qy);
-    float cosy_cosp = 1.0f - 2.0f * (qy * qy + qz * qz);
-    angles.yaw = atan2f(siny_cosp, cosy_cosp) * (180.0f / M_PI);
-
-    return angles;
+    memcpy(bufp, &rx_buf[1], len);
+    return 0;
 }
 /* USER CODE END 0 */
-
 
 /**
   * @brief  The application entry point.
@@ -189,153 +137,203 @@ int main(void)
   MX_SPI3_Init();
   MX_TIM4_Init();
   MX_SPI2_Init();
-
   /* USER CODE BEGIN 2 */
-    HAL_Delay(10);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-    HAL_Delay(10);
 
-    // Инициализация контекста драйвера ST
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
+    HAL_Delay(1);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+    HAL_Delay(1);
+
     dev_ctx.write_reg = platform_write;
     dev_ctx.read_reg = platform_read;
-    dev_ctx.mdelay = platform_delay;
     dev_ctx.handle = &hspi2;
+/*
+    lsm6dsv16x_reset_set(&dev_ctx, 1); // програмный сброс датчика
+    uint8_t rst;
+    do
+    {
+        lsm6dsv16x_reset_get(&dev_ctx, &rst);
+    }
+    while(rst);
+*/
+/*Для пакетного чтения по SPI необходимо включить параметр IF_INC*/
+    /*Включить IF_INC (автоматическое увеличение регистра)
+* Требуется для пакетного чтения: * 0x28 -> 0x29 -> 0x2A ->*/
+    uint8_t reg;
+    /* IF_INC = 1 */
+    lsm6dsv16x_read_reg(&dev_ctx, 0x12, &reg, 1);
+    reg |= 0x04;
+    lsm6dsv16x_write_reg(&dev_ctx, 0x12, &reg, 1);
 
-    // Проверяем связь с чипом через WHO_AM_I
-    uint8_t whoamI = 0;
-    lsm6dsv16x_device_id_get(&dev_ctx, &whoamI);
+    HAL_Delay(1);
+    //uint8_t reg = 0;
+    uint8_t ctrl1 = 0;
+    uint8_t ctrl2 = 0;
+    uint8_t status = 0;
 
-    // Инициализация дисплея и ШИМ подсветки
+    lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
+    lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+   // lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
+    lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
+
+    lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
+   // lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
+    lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+
+    lsm6dsv16x_pin_int_route_t int1_route;
+    memset(&int1_route, 0, sizeof(int1_route));
+    int1_route.drdy_xl = 1;
+    lsm6dsv16x_pin_int1_route_set(&dev_ctx, &int1_route);
+
+    uint8_t int1_ctrl = 0;
+    lsm6dsv16x_read_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
+
+    //sprintf(buf, "I1:%02X", int1_ctrl);
+    //ST7735_WriteString(10, 130, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
+
+    lsm6dsv16x_pin_int_route_t chk;
+    memset(&chk, 0, sizeof(chk));
+    lsm6dsv16x_pin_int1_route_get(&dev_ctx, &chk);
+
+    HAL_Delay(1);
+    lsm6dsv16x_read_reg(&dev_ctx, 0x10, &ctrl1, 1);
+    lsm6dsv16x_read_reg(&dev_ctx, 0x11, &ctrl2, 1);
+    lsm6dsv16x_read_reg(&dev_ctx, 0x1E, &status, 1);
+
+    // Отладка: читаем WHO_AM_I напрямую
+    uint8_t who_am_i = 0;
+    lsm6dsv16x_read_reg(&dev_ctx, 0x0F, &who_am_i, 1);
+
+    char debug_buf[64];
+    sprintf(debug_buf, "WHO:%02X CS:%d", who_am_i, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12));
+    HAL_UART_Transmit(&huart1, (uint8_t*)debug_buf, strlen(debug_buf), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, 100);
+
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
     __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 500);
+
+    HAL_Delay(1);
     ST7735_Init();
+    HAL_Delay(1);
+
+    ST7735_FillScreen(ST7735_RED);
+    HAL_Delay(10);
+    ST7735_FillScreen(ST7735_GREEN);
+    HAL_Delay(10);
+    ST7735_FillScreen(ST7735_BLUE);
+    HAL_Delay(10);
     ST7735_FillScreen(ST7735_BLACK);
 
-    if (whoamI == LSM6DSV16X_ID) {
-        ST7735_WriteString(5, 0, "LSM6DSV16X OK", Font_7x10, ST7735_GREEN, ST7735_BLACK);
+    ST7735_WriteString(10, 0, "STM32F407 OK", Font_7x10, ST7735_WHITE, ST7735_BLACK);
 
-        // 1. Программный сброс (SW_RESET)
-        uint8_t rst_reg = 0x01;
-        lsm6dsv16x_write_reg(&dev_ctx, LSM6DSV16X_CTRL3, &rst_reg, 1);
-        do {
-            lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_CTRL3, &rst_reg, 1);
-        } while ((rst_reg & 0x01) != 0);
+    uint8_t txbuf[2];
+    uint8_t rxbuf[2];
 
-        // 2. Включаем Акселерометр и Гироскоп строго на 30 Гц (SFLP жестко завязан на 15 или 30 Гц)
-        lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
-        lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_30Hz);
-        lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
+    txbuf[0] = 0x8F;
+    txbuf[1] = 0x00;
 
-        lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_2000dps);
-        lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_30Hz);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+    HAL_SPI_TransmitReceive(&hspi2, txbuf, rxbuf, 2, 100);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 
-        // 3. АКТИВАЦИЯ SFLP (Sensor Fusion Low-Power)
-        // Для вашей версии драйвера включаем ODR для SFLP и активируем игровой вектор вращения
-        lsm6dsv16x_sflp_data_rate_set(&dev_ctx, LSM6DSV16X_SFLP_30Hz);
+    char buf[32];
 
-        // Прямая команда на включение Game Rotation Vector (слияние Акселерометр + Гироскоп)
-        lsm6dsv16x_sflp_game_rotation_set(&dev_ctx, 1);
+    sprintf(buf, "C1:%02X C2:%02X", ctrl1, ctrl2);
+    ST7735_WriteString(10, 10, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
-        // 4. Очистка и конфигурация буфера FIFO
-        lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_BYPASS_MODE);
-        HAL_Delay(10);
-
-        // Настройка записи SFLP Game Vector в буфер FIFO через структуру конфигурации
-        lsm6dsv16x_fifo_sflp_raw_t fifo_sflp_cfg;
-        memset(&fifo_sflp_cfg, 0, sizeof(fifo_sflp_cfg));
-        fifo_sflp_cfg.game_rotation = 1; // Записывать Game Vector в FIFO
-        lsm6dsv16x_fifo_sflp_batch_set(&dev_ctx, fifo_sflp_cfg);
-
-        // Переводим FIFO в режим циклического накопления потока (Stream Mode)
-        lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
-
-        // 5. Настройка генерации прерывания по FIFO на пин INT1 (PE13)
-        lsm6dsv16x_pin_int_route_t int1_route;
-        memset(&int1_route, 0, sizeof(int1_route));
-        int1_route.fifo_th = 1; // Сигнал на ножку, если в буфере есть данные
-        lsm6dsv16x_pin_int1_route_set(&dev_ctx, &int1_route);
-
-    } else {
-        char err_buf[32];
-        sprintf(err_buf, "IMU ERR ID:%02X", whoamI);
-        ST7735_WriteString(5, 0, err_buf, Font_7x10, ST7735_RED, ST7735_BLACK);
-    }
-    // Принудительно включаем обработку прерываний для пинов 10-15 порта EXTI
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+    // Сбрасываем INT1, читая данные один раз
+    uint8_t dummy[12];
+    lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_A, dummy, 6);  // Читаем акселерометр
+    lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_G, dummy, 6);  // Читаем гироскоп
+    HAL_Delay(10);  // Даём время датчику сбросить INT1
 
   /* USER CODE END 2 */
 
-
   /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+      uint32_t t_scr = 0;
+      static uint32_t loop_cnt = 0;
 
-    /* USER CODE BEGIN WHILE */
-    while (1)
-    {
-        // Обработка запускается строго по аппаратному прерыванию от PE13
-        if (imu_data_ready)
-        {
-            imu_data_ready = 0; // Сбрасываем флаг
+      while (1)
+      {
+          loop_cnt++;
 
-            uint8_t fifo_status[2] = {0};
-            uint16_t num_samples = 0;
+          // Работаем ТОЛЬКО когда пришло прерывание
+          if (accel_ready)
+          {
+              accel_ready = 0;
 
-            // Проверяем сколько данных накопилось в FIFO
-            if (lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_FIFO_STATUS1, fifo_status, 2) == 0)
-            {
-                num_samples = fifo_status[0] | ((fifo_status[1] & 0x03) << 8);
-            }
+              // Читаем 12 байт: сначала Гироскоп (0x22), потом Акселерометр (0x28)
+              uint8_t raw[12];
+              lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_G, raw, 12);
+              drdy_cnt++;
 
-            // Вычитываем все пакеты, пока FIFO не опустеет
-            while (num_samples > 0)
-            {
-                lsm6dsv16x_fifo_out_raw_t f_data;
+              // 1. Сырые данные
+              int16_t gx = (int16_t)((raw[1] << 8) | raw[0]);
+              int16_t gy = (int16_t)((raw[3] << 8) | raw[2]);
+              // int16_t gz = (int16_t)((raw[5] << 8) | raw[4]); // Пока не используем
 
-                if (lsm6dsv16x_fifo_out_raw_get(&dev_ctx, &f_data) != 0) {
-                    break;
-                }
+              int16_t x = (int16_t)((raw[7] << 8) | raw[6]);
+              int16_t y = (int16_t)((raw[9] << 8) | raw[8]);
+              int16_t z = (int16_t)((raw[11] << 8) | raw[10]);
 
-                // 0x13 — это тег SFLP Game Rotation Vector
-                if (f_data.tag == 0x13)
-                {
-                    // 1. Интерпретируем сырые байты из FIFO пакета как массив 16-битных целых чисел
-                    int16_t *raw_axis = (int16_t *)f_data.data;
+              // 2. Конвертация в физические величины
+              float x_g = (float)x / 16384.0f;
+              float y_g = (float)y / 16384.0f;
+              float z_g = (float)z / 16384.0f;
 
-                    // 2. В вашей библиотеке ST масштабирует кватернионы из FIFO через деление на 24576.0f
-                    // Извлекаем правильные нормализованные float значения осей X, Y, Z
-                    float sflp_x = (float)raw_axis[0] / 24576.0f;
-                    float sflp_y = (float)raw_axis[1] / 24576.0f;
-                    float sflp_z = (float)raw_axis[2] / 24576.0f;
+              // Гироскоп при 250 dps имеет чувствительность 8.75 mdps/LSB (0.00875 град/сек)
+              float gyro_x_deg = gx * 0.00875f;
+              float gyro_y_deg = gy * 0.00875f;
 
-                    // 3. Конвертируем нормализованный кватернион в углы Эйлера
-                    EulerAngles_t orientation = LSM6DSV16X_Decode_SFLP(sflp_x, sflp_y, sflp_z);
+              // 3. Расчет углов из акселерометра (в градусах)
+              float accel_roll  = atan2f(y_g, z_g) * 57.2958f;      // 180 / PI
+              float accel_pitch = atan2f(-x_g, z_g) * 57.2958f;
 
-                    // 4. Вывод углов на экран ST7735
-                    char scr_buf[32];
+              // 4. Комплементарный фильтр
+              // dt = 0.01 сек (так как частота ~100-120 Гц)
+              // Коэффициент 0.98 доверяет гироскопу (краткосрочно), 0.02 - акселерометру (долгосрочно)
+              static float filter_roll = 0.0f;
+              static float filter_pitch = 0.0f;
+              float dt = 0.01f;
 
-                    snprintf(scr_buf, sizeof(scr_buf), "Roll:  %6.1f", orientation.roll);
-                    ST7735_WriteString(5, 20, scr_buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+              filter_roll  = 0.98f * (filter_roll + gyro_x_deg * dt) + 0.02f * accel_roll;
+              filter_pitch = 0.98f * (filter_pitch + gyro_y_deg * dt) + 0.02f * accel_pitch;
 
-                    snprintf(scr_buf, sizeof(scr_buf), "Pitch: %6.1f", orientation.pitch);
-                    ST7735_WriteString(5, 35, scr_buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+              // 5. Вывод на экран (обновляем раз в 100 мс)
+              if(HAL_GetTick() - t_scr >= 100)
+              {
+                  t_scr = HAL_GetTick();
 
-                    snprintf(scr_buf, sizeof(scr_buf), "Yaw:   %6.1f", orientation.yaw);
-                    ST7735_WriteString(5, 50, scr_buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-                }
-                num_samples--;
-            }
-        }
+                  	  	  	  	  sprintf(buf, "IRQ:%lu INT:%lu", imu_irq_cnt, drdy_cnt);
+                                  ST7735_WriteString(5, 10, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
 
-        // Небольшая задержка, чтобы микроконтроллер успевал выполнять другие системные задачи,
-        // когда прерывания от датчика неактивны
-        HAL_Delay(1);
-      /* USER CODE END WHILE */
+                                  // %7.3f означает: всего 7 символов, 3 знака после запятой.
+                                  // Пример вывода: "  12.345" или " -1.234"
+                                  sprintf(buf, "Roll :%7.3f", filter_roll);
+                                  ST7735_WriteString(10, 30, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
+                                  sprintf(buf, "Pitch:%7.3f", filter_pitch);
+                                  ST7735_WriteString(10, 40, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
-    }
-      /* USER CODE BEGIN 3 */
-    }
-    /* USER CODE END 3 */
+                                  // Для сравнения: сырые данные акселерометра (тоже с 3 знаками)
+                                  sprintf(buf, "X_raw:%7.3f", x_g);
+                                  ST7735_WriteString(10, 60, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+                                  sprintf(buf, "Y_raw:%7.3f", y_g);
+                                  ST7735_WriteString(10, 70, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+              }
+          }
+
+          HAL_Delay(1);
+      }
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  /* USER CODE END 3 */
+}
 
 /**
   * @brief System Clock Configuration
@@ -383,9 +381,18 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    // 1. Считаем ВСЕ прерывания EXTI, чтобы проверить, доходит ли сигнал до CPU вообще
+    imu_irq_cnt++;
 
+    // 2. Если это наш пин, ставим флаг
+    if (GPIO_Pin == INIT1_Pin)
+    {
+        accel_ready = 1;
+    }
+}
 /* USER CODE END 4 */
-
 
 /**
   * @brief  This function is executed in case of error occurrence.
