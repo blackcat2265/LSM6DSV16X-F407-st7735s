@@ -171,55 +171,57 @@ int main(void)
   lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
   lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
 
-  // === 6. НАСТРОЙКА FIFO (СТРОГО ПО АЛГОРИТМУ ИЗ lsm6dsv16x_fifo_irq.c) ===
-
-  // 6.1 Watermark = 10 пакетов (70 байт)
-  uint8_t wtm_low = 0x0A;   // FIFO_CTRL1 (0x07)
-  uint8_t wtm_high = 0x00;  // FIFO_CTRL2 (0x08)
-  lsm6dsv16x_write_reg(&dev_ctx, 0x07, &wtm_low, 1);
-  lsm6dsv16x_write_reg(&dev_ctx, 0x08, &wtm_high, 1);
-
-  // 6.2 BDR_XL = 6 (120 Hz), BDR_GY = 6 (120 Hz)
-  uint8_t fifo_ctrl3 = 0x66;  // FIFO_CTRL3 (0x09)
-  lsm6dsv16x_write_reg(&dev_ctx, 0x09, &fifo_ctrl3, 1);
-
-  // 6.3 FIFO_MODE = 6 (Continuous Mode)
-  uint8_t fifo_ctrl4 = 0x06;  // FIFO_CTRL4 (0x0A)
-  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_ctrl4, 1);
-
-  // 6.4 Маршрутизация прерывания: int1_fifo_th = 1
-  uint8_t int1_ctrl = 0x08;  // INT1_CTRL (0x0D), бит 3
-  lsm6dsv16x_write_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
-
   // ========================================================
-  // === СКОРРЕКТИРОВАННАЯ ИНИЦИАЛИЗАЦИИ SFLP И FIFO ======
+  // === ОФИЦИАЛЬНАЯ ИНИЦИАЛИЗАЦИЯ SFLP + FIFO (ИСПРАВЛЕНО) ===
   // ========================================================
 
-  // 1. Включаем High-Performance (120 Hz)
-  uint8_t cfg = 0x60;
-  lsm6dsv16x_write_reg(&dev_ctx, 0x10, &cfg, 1); // XL
-  lsm6dsv16x_write_reg(&dev_ctx, 0x11, &cfg, 1); // Gyro
+  // 1. Сброс FIFO (Регистр FIFO_CTRL4 = 0x00 - Bypass mode)
+  uint8_t r_fifo4 = 0x00;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &r_fifo4, 1);
 
-  // 2. Включаем SFLP (Page 0)
-  uint8_t sflp_ctrl = 0x04;
-  lsm6dsv16x_write_reg(&dev_ctx, 0x5E, &sflp_ctrl, 1);
+  // 2. Включаем High-Performance режим для датчиков (120 Hz)
+  uint8_t ctrl_val = 0x60;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x10, &ctrl_val, 1); // CTRL1_XL
+  lsm6dsv16x_write_reg(&dev_ctx, 0x11, &ctrl_val, 1); // CTRL2_G
 
-  // 3. Page 1: Включаем и инитим SFLP
-  uint8_t p_acc = 0x80; lsm6dsv16x_write_reg(&dev_ctx, 0x01, &p_acc, 1);
-  uint8_t val = 0x04;
-  lsm6dsv16x_write_reg(&dev_ctx, 0x44, &val, 1); // En
-  lsm6dsv16x_write_reg(&dev_ctx, 0x66, &val, 1); // Init
-  p_acc = 0x00; lsm6dsv16x_write_reg(&dev_ctx, 0x01, &p_acc, 1); // Вернуть Page 0
+  // 3. Устанавливаем Watermark порог на 10 пакетов (FIFO_CTRL1 = 0x0A)
+  uint8_t r_fifo1 = 0x0A;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x07, &r_fifo1, 1);
 
-  // 4. FIFO: Настройка SFLP (0x06 - критично!)
-  uint8_t fifo_ctrl6 = 0x06;
-  lsm6dsv16x_write_reg(&dev_ctx, 0x0C, &fifo_ctrl6, 1);
+  // 4. КРИТИЧЕСКИЙ ШАГ: Разрешаем запись XL и GYRO в FIFO (FIFO_CTRL3 = 0x66)
+  uint8_t r_fifo3 = 0x66; // XL BDR = 120Hz, GYRO BDR = 120Hz
+  lsm6dsv16x_write_reg(&dev_ctx, 0x09, &r_fifo3, 1);
 
-  HAL_Delay(100);
+  // 5. Разрешаем работу алгоритма SFLP на базовом уровне (Page 0)
+  uint8_t r_sflp_ctrl = 0x04; // sflp_game_fifo_en в регистре 0x5E
+  lsm6dsv16x_write_reg(&dev_ctx, 0x5E, &r_sflp_ctrl, 1);
 
+  // 6. Переходим на встроенную Page 1 для запуска алгоритма
+  uint8_t page_en = 0x80;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x01, &page_en, 1); // FUNC_CFG_ACCESS
 
+  uint8_t start_val = 0x04;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x44, &start_val, 1); // EMB_FUNC_EN_A (sflp_game_en = 1)
+  lsm6dsv16x_write_reg(&dev_ctx, 0x66, &start_val, 1); // EMB_FUNC_INIT_A (sflp_game_init = 1)
 
-  // === 8. Диагностика: читаем регистры обратно ===
+  uint8_t page_dis = 0x00;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x01, &page_dis, 1); // Возвращаемся в Page 0
+
+  // 7. Конфигурируем FIFO_CTRL6 (0x0C) — отправка кватернионов
+  uint8_t r_fifo6 = 0x06;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x0C, &r_fifo6, 1);
+
+  // 8. Маршрутизация прерывания Вотермарка на пин INT1
+  uint8_t r_int1 = 0x08; // INT1_CTRL (0x0D), бит int1_fifo_th
+  lsm6dsv16x_write_reg(&dev_ctx, 0x0D, &r_int1, 1);
+
+  // 9. ЗАПУСКАЕМ FIFO в непрерывный режим работы (FIFO_CTRL4 = 0x06 - Continuous)
+  r_fifo4 = 0x06;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &r_fifo4, 1);
+
+  HAL_Delay(200);
+
+  // === 8. Диагностика: восстанавливаем чтение регистров для экрана ===
   uint8_t diag[5];
   lsm6dsv16x_read_reg(&dev_ctx, 0x07, &diag[0], 1);  // FIFO_CTRL1
   lsm6dsv16x_read_reg(&dev_ctx, 0x09, &diag[1], 1);  // FIFO_CTRL3
@@ -256,6 +258,10 @@ int main(void)
   // Переменные для кватернионов SFLP
   int16_t sflp_q[3] = {0};
   float pitch = 0.0f;
+
+  // Глушим ворнинги компилятора, имитируя использование переменных
+   (void)last_x; (void)last_y; (void)last_z;
+   (void)last_gx; (void)last_gy; (void)last_gz;
 
   while (1)
   {
