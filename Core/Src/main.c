@@ -191,57 +191,31 @@ int main(void)
   uint8_t int1_ctrl = 0x08;  // INT1_CTRL (0x0D), бит 3
   lsm6dsv16x_write_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
 
-  // Включаем алгоритм SFLP (Sensor Fusion)
-  uint8_t sflp_ctrl = 0x04; // Включаем SFLP Game Rotation Vector
-  lsm6dsv16x_write_reg(&dev_ctx, 0x5E, &sflp_ctrl, 1); // EMB_FUNC_SRC_BDR
-
-  // Направляем SFLP данные в FIFO (Batching Data Rate)
-  uint8_t fifo_sflp_ctrl = 0x06; // Частота та же, что и у датчиков (120 Hz)
-  lsm6dsv16x_write_reg(&dev_ctx, 0x0C, &fifo_sflp_ctrl, 1); // FIFO_CTRL6
-
-  // === 7. Включение ODR (ТОЛЬКО ПОСЛЕ настройки FIFO!) ===
-  lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
-  lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
-  lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
-
-  HAL_Delay(10);
-
   // ========================================================
-  // === ЖЕЛЕЗОБЕТОННАЯ ИНИЦИАЛИЗАЦИЯ SFLP (SMART PAGE 1) ===
+  // === СКОРРЕКТИРОВАННАЯ ИНИЦИАЛИЗАЦИИ SFLP И FIFO ======
   // ========================================================
 
-  // 1. Сначала жестко переводим гироскоп и акселерометр в High-Performance режим
-  // Без этого встроенный ИИ-сопроцессор просто обесточен!
-  uint8_t ctrl1_val = 0x60; // Акселерометр: 120Hz, High-Performance
-  lsm6dsv16x_write_reg(&dev_ctx, 0x10, &ctrl1_val, 1);
-  uint8_t ctrl2_val = 0x60; // Гироскоп: 120Hz, High-Performance
-  lsm6dsv16x_write_reg(&dev_ctx, 0x11, &ctrl2_val, 1);
+  // 1. Включаем High-Performance (120 Hz)
+  uint8_t cfg = 0x60;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x10, &cfg, 1); // XL
+  lsm6dsv16x_write_reg(&dev_ctx, 0x11, &cfg, 1); // Gyro
 
-  // 2. Открываем доступ к скрытой странице встроенных функций (Page 1)
-  uint8_t page_access = 0x80;
-  lsm6dsv16x_write_reg(&dev_ctx, 0x01, &page_access, 1); // FUNC_CFG_ACCESS
+  // 2. Включаем SFLP (Page 0)
+  uint8_t sflp_ctrl = 0x04;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x5E, &sflp_ctrl, 1);
 
-  // 3. Активируем Sensor Fusion Low Power (Регистр EMB_FUNC_EN_A = 0x44)
-  uint8_t emb_func_a = 0x04; // sflp_game_en = 1
-  lsm6dsv16x_write_reg(&dev_ctx, 0x44, &emb_func_a, 1);
+  // 3. Page 1: Включаем и инитим SFLP
+  uint8_t p_acc = 0x80; lsm6dsv16x_write_reg(&dev_ctx, 0x01, &p_acc, 1);
+  uint8_t val = 0x04;
+  lsm6dsv16x_write_reg(&dev_ctx, 0x44, &val, 1); // En
+  lsm6dsv16x_write_reg(&dev_ctx, 0x66, &val, 1); // Init
+  p_acc = 0x00; lsm6dsv16x_write_reg(&dev_ctx, 0x01, &p_acc, 1); // Вернуть Page 0
 
-  // 4. Задаем частоту работы самого алгоритма SFLP (Регистр SFLP_ODR = 0x5E)
-  uint8_t sflp_odr_reg = 0x04; // 120Hz (совпадает с акселерометром)
-  lsm6dsv16x_write_reg(&dev_ctx, 0x5E, &sflp_odr_reg, 1);
-
-  // 5. Запускаем сброс и инициализацию ядра SFLP (Регистр EMB_FUNC_INIT_A = 0x66)
-  uint8_t emb_init_a = 0x04; // sflp_game_init = 1
-  lsm6dsv16x_write_reg(&dev_ctx, 0x66, &emb_init_a, 1);
-
-  // 6. Закрываем доступ к скрытой странице, возвращаемся в основную (ОБЯЗАТЕЛЬНО!)
-  page_access = 0x00;
-  lsm6dsv16x_write_reg(&dev_ctx, 0x01, &page_access, 1);
-
-  // 7. Настраиваем буфер FIFO отправлять кватернионы наружу (Регистр FIFO_CTRL6 = 0x0C)
-  uint8_t fifo_ctrl6 = 0x04; // sflp_game_fifo_en = 1
+  // 4. FIFO: Настройка SFLP (0x06 - критично!)
+  uint8_t fifo_ctrl6 = 0x06;
   lsm6dsv16x_write_reg(&dev_ctx, 0x0C, &fifo_ctrl6, 1);
 
-  HAL_Delay(100); // Даем время ИИ-ядру откалиброваться и рассчитать первые углы
+  HAL_Delay(100);
 
 
 
