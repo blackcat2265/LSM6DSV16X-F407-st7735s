@@ -155,16 +155,37 @@ int main(void)
 
     HAL_Delay(1);
 
+    // 1. СНАЧАЛА настраиваем диапазоны (БЕЗ ODR!)
     lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
-    lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
-    lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
-
     lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
+
+    // 2. СНАЧАЛА настраиваем FIFO (ДО включения ODR!)
+    uint8_t wtm_low = 0x02;
+    uint8_t wtm_high = 0x00;
+    lsm6dsv16x_write_reg(&dev_ctx, 0x07, &wtm_low, 1);
+    lsm6dsv16x_write_reg(&dev_ctx, 0x08, &wtm_high, 1);
+
+    uint8_t fifo_ctrl3 = 0x66;
+    lsm6dsv16x_write_reg(&dev_ctx, 0x09, &fifo_ctrl3, 1);
+
+    uint8_t fifo_ctrl4 = 0x06;
+    lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_ctrl4, 1);
+
+    uint8_t int1_ctrl = 0x08;
+    lsm6dsv16x_write_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
+
+    // 3. И ТОЛЬКО ПОТОМ включаем ODR (в самом конце!)
+    lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
     lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
 
+    // 4. НЕБОЛЬШАЯ задержка, чтобы датчик стабилизировался
+    HAL_Delay(50);
+
+    // Проверка WHO_AM_I
     uint8_t who_am_i = 0;
     lsm6dsv16x_read_reg(&dev_ctx, 0x0F, &who_am_i, 1);
 
+    // Инициализация дисплея
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
     __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 500);
     HAL_Delay(1);
@@ -181,103 +202,74 @@ int main(void)
         while(1) { HAL_Delay(100); }
     }
 
-    // FIFO настройка (watermark = 2 пакета = 14 байт)
-    uint8_t wtm_low = 0x02;  // УМЕНЬШИЛИ watermark!
-    uint8_t wtm_high = 0x00;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x07, &wtm_low, 1);
-    lsm6dsv16x_write_reg(&dev_ctx, 0x08, &wtm_high, 1);
-
-    uint8_t fifo_ctrl3 = 0x66;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x09, &fifo_ctrl3, 1);
-
-    uint8_t fifo_ctrl4 = 0x06;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_ctrl4, 1);
-
-    uint8_t int1_ctrl = 0x08;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
-
     HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-
-    // БЕЗ HAL_Delay! Сразу переходим в while(1)
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
       uint32_t t_scr = 0;
+      uint32_t t_fifo = 0;
 
       static int16_t last_x = 0, last_y = 0, last_z = 0;
       static int16_t last_gx = 0, last_gy = 0, last_gz = 0;
-      static float temp_c = 25.0f;
-      static bool new_accel = false, new_gyro = false;
 
       static float filter_roll = 0.0f;
       static float filter_pitch = 0.0f;
 
-      static uint32_t cnt_gyro = 0;
-      static uint32_t cnt_accel = 0;
-      static uint32_t cnt_temp = 0;
+      static uint32_t overflow_cnt = 0;
 
       while (1)
       {
-          // ЧИТАЕМ FIFO ВСЕГДА (не только по прерыванию!)
-          uint8_t fifo_status[2];
-          lsm6dsv16x_read_reg(&dev_ctx, 0x1B, fifo_status, 2);
-          uint16_t fifo_level = ((fifo_status[1] & 0x0F) << 8) | fifo_status[0];
-          uint8_t fifo_full = (fifo_status[1] >> 7) & 0x01;
-
-          // Защита от переполнения
-          if (fifo_full) {
-              // Сбрасываем FIFO
-              uint8_t fifo_reset = 0x00;
-              lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_reset, 1);
-              HAL_Delay(1);
-              uint8_t fifo_ctrl4 = 0x06;
-              lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_ctrl4, 1);
-          }
-
-          if (fifo_level >= 7)
+          // Читаем FIFO каждые 5 мс (достаточно, чтобы не переполнялся)
+          if (HAL_GetTick() - t_fifo >= 5)
           {
-              if (fifo_level > 200) fifo_level = 200;
+              t_fifo = HAL_GetTick();
 
-              uint8_t fifo_buf[210];
-              lsm6dsv16x_read_reg(&dev_ctx, 0x78, fifo_buf, fifo_level);
+              uint8_t fifo_buf[14];
+              lsm6dsv16x_read_reg(&dev_ctx, 0x78, fifo_buf, 14);
 
-              for (uint16_t i = 0; i + 6 < fifo_level; i += 7)
-              {
-                  uint8_t tag = fifo_buf[i] >> 3;
+              uint8_t tag1 = fifo_buf[0] >> 3;
+              uint8_t tag2 = fifo_buf[7] >> 3;
 
-                  if (tag == 0x02) // Акселерометр
-                  {
-                      last_x = (int16_t)((fifo_buf[i+2] << 8) | fifo_buf[i+1]);
-                      last_y = (int16_t)((fifo_buf[i+4] << 8) | fifo_buf[i+3]);
-                      last_z = (int16_t)((fifo_buf[i+6] << 8) | fifo_buf[i+5]);
-                      new_accel = true;
-                      cnt_accel++;
-                  }
-                  else if (tag == 0x01) // Гироскоп
-                  {
-                      last_gx = (int16_t)((fifo_buf[i+2] << 8) | fifo_buf[i+1]);
-                      last_gy = (int16_t)((fifo_buf[i+4] << 8) | fifo_buf[i+3]);
-                      last_gz = (int16_t)((fifo_buf[i+6] << 8) | fifo_buf[i+5]);
-                      new_gyro = true;
-                      cnt_gyro++;
-                  }
-                  else if (tag == 0x03) // Температура
-                  {
-                      int16_t t_raw = (int16_t)((fifo_buf[i+2] << 8) | fifo_buf[i+1]);
-                      temp_c = (t_raw / 256.0f) + 25.0f;
-                      cnt_temp++;
-                  }
+              if (tag1 == 0x01) {
+                  last_gx = (int16_t)((fifo_buf[2] << 8) | fifo_buf[1]);
+                  last_gy = (int16_t)((fifo_buf[4] << 8) | fifo_buf[3]);
               }
-              drdy_cnt++;
+              else if (tag1 == 0x02) {
+                  last_x = (int16_t)((fifo_buf[2] << 8) | fifo_buf[1]);
+                  last_y = (int16_t)((fifo_buf[4] << 8) | fifo_buf[3]);
+                  last_z = (int16_t)((fifo_buf[6] << 8) | fifo_buf[5]);
+              }
+
+              if (tag2 == 0x01) {
+                  last_gx = (int16_t)((fifo_buf[9] << 8) | fifo_buf[8]);
+                  last_gy = (int16_t)((fifo_buf[11] << 8) | fifo_buf[10]);
+              }
+              else if (tag2 == 0x02) {
+                  last_x = (int16_t)((fifo_buf[9] << 8) | fifo_buf[8]);
+                  last_y = (int16_t)((fifo_buf[11] << 8) | fifo_buf[10]);
+                  last_z = (int16_t)((fifo_buf[13] << 8) | fifo_buf[12]);
+              }
+
+              // Защита: если FIFO переполнился — сбрасываем
+              uint8_t fs2;
+              lsm6dsv16x_read_reg(&dev_ctx, 0x3B, &fs2, 1);
+              if (fs2 & 0xC0) {  // full или overrun
+                  uint8_t bypass = 0x00;
+                  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &bypass, 1);
+                  HAL_Delay(1);
+                  uint8_t cont = 0x06;
+                  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &cont, 1);
+                  overflow_cnt++;
+              }
           }
 
-          if (new_accel && new_gyro)
+          if(HAL_GetTick() - t_scr >= 50)
           {
-              new_accel = false;
-              new_gyro = false;
+              t_scr = HAL_GetTick();
+              char buf[20];
 
               float x_g = (float)last_x / 16384.0f;
               float y_g = (float)last_y / 16384.0f;
@@ -289,26 +281,24 @@ int main(void)
               float accel_roll  = atan2f(y_g, z_g) * 57.2958f;
               float accel_pitch = atan2f(-x_g, z_g) * 57.2958f;
 
-              float dt = 0.01f;
+              float dt = 0.05f;
               filter_roll  = 0.98f * (filter_roll + gyro_x_deg * dt) + 0.02f * accel_roll;
               filter_pitch = 0.98f * (filter_pitch + gyro_y_deg * dt) + 0.02f * accel_pitch;
-          }
 
-          if(HAL_GetTick() - t_scr >= 100)
-          {
-              t_scr = HAL_GetTick();
+              sprintf(buf, "R:%-5.1f P:%-5.1f ", filter_roll, filter_pitch);
+              ST7735_WriteString(0, 0, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
-              sprintf(buf, "G:%lu A:%lu T:%lu", cnt_gyro, cnt_accel, cnt_temp);
-              ST7735_WriteString(10, 70, buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
+              sprintf(buf, "AX:%-5d AY:%-5d ", last_x, last_y);
+              ST7735_WriteString(0, 15, buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
 
-              sprintf(buf, "Roll :%7.3f", filter_roll);
-              ST7735_WriteString(10, 80, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
+              sprintf(buf, "AZ:%-5d ", last_z);
+              ST7735_WriteString(0, 30, buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
 
-              sprintf(buf, "Pitch:%7.3f", filter_pitch);
-              ST7735_WriteString(10, 90, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
+              sprintf(buf, "GX:%-5d GY:%-5d ", last_gx, last_gy);
+              ST7735_WriteString(0, 45, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
 
-              sprintf(buf, "Temp:%5.1f", temp_c);
-              ST7735_WriteString(10, 100, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+              sprintf(buf, "OVF:%lu ", overflow_cnt);
+              ST7735_WriteString(0, 60, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
           }
 
           HAL_Delay(1);
