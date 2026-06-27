@@ -30,7 +30,6 @@
 #include "st7735.h"
 #include "fonts.h"
 #include <string.h>
-#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -137,7 +136,6 @@ int main(void)
   MX_SPI3_Init();
   MX_TIM4_Init();
   MX_SPI2_Init();
-
   /* USER CODE BEGIN 2 */
 
     HAL_Delay(1);
@@ -147,169 +145,235 @@ int main(void)
     dev_ctx.write_reg = platform_write;
     dev_ctx.read_reg = platform_read;
     dev_ctx.handle = &hspi2;
-
+/*
+    lsm6dsv16x_reset_set(&dev_ctx, 1); // програмный сброс датчика
+    uint8_t rst;
+    do
+    {
+        lsm6dsv16x_reset_get(&dev_ctx, &rst);
+    }
+    while(rst);
+*/
+/*Для пакетного чтения по SPI необходимо включить параметр IF_INC*/
+    /*Включить IF_INC (автоматическое увеличение регистра)
+* Требуется для пакетного чтения: * 0x28 -> 0x29 -> 0x2A ->*/
     uint8_t reg;
+    /* IF_INC = 1 */
     lsm6dsv16x_read_reg(&dev_ctx, 0x12, &reg, 1);
     reg |= 0x04;
     lsm6dsv16x_write_reg(&dev_ctx, 0x12, &reg, 1);
 
     HAL_Delay(1);
+    //uint8_t reg = 0;
+    uint8_t ctrl1 = 0;
+    uint8_t ctrl2 = 0;
+    uint8_t status = 0;
 
-    // 1. СНАЧАЛА настраиваем диапазоны (БЕЗ ODR!)
     lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
-    lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
-
-    // 2. СНАЧАЛА настраиваем FIFO (ДО включения ODR!)
-    uint8_t wtm_low = 0x02;
-    uint8_t wtm_high = 0x00;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x07, &wtm_low, 1);
-    lsm6dsv16x_write_reg(&dev_ctx, 0x08, &wtm_high, 1);
-
-    uint8_t fifo_ctrl3 = 0x66;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x09, &fifo_ctrl3, 1);
-
-    uint8_t fifo_ctrl4 = 0x06;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_ctrl4, 1);
-
-    uint8_t int1_ctrl = 0x08;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
-
-    // 3. И ТОЛЬКО ПОТОМ включаем ODR (в самом конце!)
     lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+   // lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
+    lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
+
+    lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
+   // lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
     lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
 
-    // 4. НЕБОЛЬШАЯ задержка, чтобы датчик стабилизировался
-    HAL_Delay(50);
+    lsm6dsv16x_pin_int_route_t int1_route;
+    memset(&int1_route, 0, sizeof(int1_route));
+    int1_route.drdy_xl = 1;
+    lsm6dsv16x_pin_int1_route_set(&dev_ctx, &int1_route);
 
-    // Проверка WHO_AM_I
+    uint8_t int1_ctrl = 0;
+    lsm6dsv16x_read_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
+
+    lsm6dsv16x_pin_int_route_t chk;
+    memset(&chk, 0, sizeof(chk));
+    lsm6dsv16x_pin_int1_route_get(&dev_ctx, &chk);
+
+    HAL_Delay(1);
+    lsm6dsv16x_read_reg(&dev_ctx, 0x10, &ctrl1, 1);
+    lsm6dsv16x_read_reg(&dev_ctx, 0x11, &ctrl2, 1);
+    lsm6dsv16x_read_reg(&dev_ctx, 0x1E, &status, 1);
+
+    // Отладка: читаем WHO_AM_I напрямую
     uint8_t who_am_i = 0;
     lsm6dsv16x_read_reg(&dev_ctx, 0x0F, &who_am_i, 1);
 
-    // Инициализация дисплея
+    char debug_buf[64];
+    sprintf(debug_buf, "WHO:%02X CS:%d", who_am_i, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12));
+    HAL_UART_Transmit(&huart1, (uint8_t*)debug_buf, strlen(debug_buf), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, 100);
+
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
     __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 500);
+
     HAL_Delay(1);
     ST7735_Init();
     HAL_Delay(1);
+
+    ST7735_FillScreen(ST7735_RED);
+    HAL_Delay(10);
+    ST7735_FillScreen(ST7735_GREEN);
+    HAL_Delay(10);
+    ST7735_FillScreen(ST7735_BLUE);
+    HAL_Delay(10);
     ST7735_FillScreen(ST7735_BLACK);
 
+    ST7735_WriteString(10, 0, "STM32F407 OK", Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+    uint8_t txbuf[2];
+    uint8_t rxbuf[2];
+
+    txbuf[0] = 0x8F;
+    txbuf[1] = 0x00;
+
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+    HAL_SPI_TransmitReceive(&hspi2, txbuf, rxbuf, 2, 100);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+
     char buf[32];
-    sprintf(buf, "WHO:%02X", who_am_i);
-    ST7735_WriteString(10, 0, buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
 
-    if (who_am_i != 0x70) {
-        ST7735_WriteString(10, 10, "BAD ID!", Font_7x10, ST7735_RED, ST7735_BLACK);
-        while(1) { HAL_Delay(100); }
-    }
-
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+    sprintf(buf, "C1:%02X C2:%02X", ctrl1, ctrl2);
+    ST7735_WriteString(10, 10, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
       uint32_t t_scr = 0;
-      uint32_t t_fifo = 0;
+      // char buf[32]; <-- ЭТУ СТРОКУ УДАЛИЛ, так как она уже есть у вас выше в коде!
 
-      static int16_t last_x = 0, last_y = 0, last_z = 0;
-      static int16_t last_gx = 0, last_gy = 0, last_gz = 0;
-
-      static float filter_roll = 0.0f;
-      static float filter_pitch = 0.0f;
-
-      static uint32_t overflow_cnt = 0;
+      // Переменные для диагностики зависания
+      static uint32_t spi_error_cnt = 0;
+      static uint32_t last_irq_cnt = 0;
+      static uint32_t freeze_detect_cnt = 0;
+      static uint8_t sensor_alive = 1;
 
       while (1)
       {
-          // Читаем FIFO каждые 5 мс (достаточно, чтобы не переполнялся)
-          if (HAL_GetTick() - t_fifo >= 5)
-          {
-              t_fifo = HAL_GetTick();
+          // 1. Если датчик замёрз — автоматически перезапускаем его
+          if (!sensor_alive) {
+              sensor_alive = 1;
+              freeze_detect_cnt = 0;
 
-              uint8_t fifo_buf[14];
-              lsm6dsv16x_read_reg(&dev_ctx, 0x78, fifo_buf, 14);
+              // Программный сброс датчика (CTRL3 = 0x12, бит 0 = SW_RESET)
+              uint8_t rst = 0x01;
+              lsm6dsv16x_write_reg(&dev_ctx, 0x12, &rst, 1);
+              HAL_Delay(50);
 
-              uint8_t tag1 = fifo_buf[0] >> 3;
-              uint8_t tag2 = fifo_buf[7] >> 3;
+              // Ждём завершения сброса
+              do {
+                  lsm6dsv16x_read_reg(&dev_ctx, 0x12, &rst, 1);
+              } while (rst & 0x01);
 
-              if (tag1 == 0x01) {
-                  last_gx = (int16_t)((fifo_buf[2] << 8) | fifo_buf[1]);
-                  last_gy = (int16_t)((fifo_buf[4] << 8) | fifo_buf[3]);
-              }
-              else if (tag1 == 0x02) {
-                  last_x = (int16_t)((fifo_buf[2] << 8) | fifo_buf[1]);
-                  last_y = (int16_t)((fifo_buf[4] << 8) | fifo_buf[3]);
-                  last_z = (int16_t)((fifo_buf[6] << 8) | fifo_buf[5]);
-              }
+              // Повторная инициализация
+              lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
+              lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+              lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
 
-              if (tag2 == 0x01) {
-                  last_gx = (int16_t)((fifo_buf[9] << 8) | fifo_buf[8]);
-                  last_gy = (int16_t)((fifo_buf[11] << 8) | fifo_buf[10]);
-              }
-              else if (tag2 == 0x02) {
-                  last_x = (int16_t)((fifo_buf[9] << 8) | fifo_buf[8]);
-                  last_y = (int16_t)((fifo_buf[11] << 8) | fifo_buf[10]);
-                  last_z = (int16_t)((fifo_buf[13] << 8) | fifo_buf[12]);
-              }
+              lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
+              lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
 
-              // Защита: если FIFO переполнился — сбрасываем
-              uint8_t fs2;
-              lsm6dsv16x_read_reg(&dev_ctx, 0x3B, &fs2, 1);
-              if (fs2 & 0xC0) {  // full или overrun
-                  uint8_t bypass = 0x00;
-                  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &bypass, 1);
-                  HAL_Delay(1);
-                  uint8_t cont = 0x06;
-                  lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &cont, 1);
-                  overflow_cnt++;
-              }
+              HAL_Delay(100);
           }
 
-          if(HAL_GetTick() - t_scr >= 50)
+          // 2. Чтение данных с проверкой ошибок
+          static uint8_t raw[6] = {0};
+          static uint8_t raw_g[6] = {0};
+
+          if (lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_A, raw, 6) != 0) {
+              spi_error_cnt++;
+          }
+          drdy_cnt++;
+
+          uint8_t st;
+          lsm6dsv16x_read_reg(&dev_ctx, 0x1E, &st, 1);
+          lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_G, raw_g, 6);
+
+          int16_t x = (int16_t)((raw[1] << 8) | raw[0]);
+          int16_t y = (int16_t)((raw[3] << 8) | raw[2]);
+          int16_t z = (int16_t)((raw[5] << 8) | raw[4]);
+
+          int16_t gx = (int16_t)((raw_g[1] << 8) | raw_g[0]);
+          int16_t gy = (int16_t)((raw_g[3] << 8) | raw_g[2]);
+          int16_t gz = (int16_t)((raw_g[5] << 8) | raw_g[4]);
+
+          float x_g = (float)x / 16384.0f;
+          float y_g = (float)y / 16384.0f;
+          float z_g = (float)z / 16384.0f;
+
+          // 3. Обновление экрана раз в 100 мс
+          if(HAL_GetTick() - t_scr >= 100)
           {
               t_scr = HAL_GetTick();
-              char buf[20];
 
-              float x_g = (float)last_x / 16384.0f;
-              float y_g = (float)last_y / 16384.0f;
-              float z_g = (float)last_z / 16384.0f;
+              // Диагностика зависания
+              if (imu_irq_cnt == last_irq_cnt) {
+                  freeze_detect_cnt++;
+              } else {
+                  freeze_detect_cnt = 0;
+                  last_irq_cnt = imu_irq_cnt;
+              }
 
-              float gyro_x_deg = last_gx * 0.00875f;
-              float gyro_y_deg = last_gy * 0.00875f;
+              if (freeze_detect_cnt >= 50) { // 50 * 100мс = 5 секунд без новых данных
+                  sensor_alive = 0;
+              }
 
-              float accel_roll  = atan2f(y_g, z_g) * 57.2958f;
-              float accel_pitch = atan2f(-x_g, z_g) * 57.2958f;
+              // Вывод диагностики
+              sprintf(buf, "E:%lu", spi_error_cnt);
+              ST7735_WriteString(10, 140, buf, Font_7x10, ST7735_RED, ST7735_BLACK);
 
-              float dt = 0.05f;
-              filter_roll  = 0.98f * (filter_roll + gyro_x_deg * dt) + 0.02f * accel_roll;
-              filter_pitch = 0.98f * (filter_pitch + gyro_y_deg * dt) + 0.02f * accel_pitch;
+              sprintf(buf, "F:%lu", freeze_detect_cnt);
+              ST7735_WriteString(10, 150, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
 
-              sprintf(buf, "R:%-5.1f P:%-5.1f ", filter_roll, filter_pitch);
-              ST7735_WriteString(0, 0, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
+              if (!sensor_alive) {
+                  ST7735_WriteString(10, 160, "DEAD!   ", Font_7x10, ST7735_RED, ST7735_BLACK);
+              } else {
+                  ST7735_WriteString(10, 160, "OK      ", Font_7x10, ST7735_GREEN, ST7735_BLACK);
+              }
 
-              sprintf(buf, "AX:%-5d AY:%-5d ", last_x, last_y);
-              ST7735_WriteString(0, 15, buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
+              // Вывод данных
+              sprintf(buf, "INT:%lu", drdy_cnt);
+              ST7735_WriteString(10, 20, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
 
-              sprintf(buf, "AZ:%-5d ", last_z);
-              ST7735_WriteString(0, 30, buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
+              sprintf(buf, "IRQ:%lu", imu_irq_cnt);
+              ST7735_WriteString(10, 30, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
 
-              sprintf(buf, "GX:%-5d GY:%-5d ", last_gx, last_gy);
-              ST7735_WriteString(0, 45, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+              sprintf(buf, "X:%6.2f", x_g);
+              ST7735_WriteString(10, 50, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
 
-              sprintf(buf, "OVF:%lu ", overflow_cnt);
-              ST7735_WriteString(0, 60, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
+              sprintf(buf, "Y:%6.2f", y_g);
+              ST7735_WriteString(10, 60, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+              sprintf(buf, "Z:%6.2f", z_g);
+              ST7735_WriteString(10, 70, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+              sprintf(buf, "D:%ld", (int32_t)(imu_irq_cnt - drdy_cnt));
+              ST7735_WriteString(10, 80, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+
+              sprintf(buf, "GX:%6d", gx);
+              ST7735_WriteString(10, 90, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+              sprintf(buf, "GY:%6d", gy);
+              ST7735_WriteString(10, 100, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+              sprintf(buf, "GZ:%6d", gz);
+              ST7735_WriteString(10, 110, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+              sprintf(buf, "ST:%02X", st);
+              ST7735_WriteString(10, 120, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+
+              sprintf(buf, "I1:%02X", int1_ctrl);
+              ST7735_WriteString(10, 130, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
           }
 
           HAL_Delay(1);
       }
     /* USER CODE END WHILE */
 
-  /* USER CODE BEGIN 3 */
-  /* USER CODE END 3 */
-}
-
-
+    /* USER CODE BEGIN 3 */
+    /* USER CODE END 3 */
+  }
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -358,15 +422,13 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    // 1. Считаем ВСЕ прерывания EXTI, чтобы проверить, доходит ли сигнал до CPU вообще
-    imu_irq_cnt++;
-
-    // 2. Если это наш пин, ставим флаг
-    if (GPIO_Pin == INIT1_Pin)
+    if (GPIO_Pin == GPIO_PIN_13)  // PE13 = INT1 от LSM6DSV16X
     {
-        accel_ready = 1;
+        accel_ready = 1;          // Флаг: новые данные готовы
+        imu_irq_cnt++;            // Счётчик прерываний
     }
 }
+
 /* USER CODE END 4 */
 
 /**
