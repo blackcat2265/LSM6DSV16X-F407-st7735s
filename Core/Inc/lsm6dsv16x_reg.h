@@ -1,39 +1,39 @@
 /**
- ******************************************************************
- * @файл lsm6dsv16x_reg.h
- * @author Команда разработчиков программного обеспечения для датчиков
- * @brief Этот файл содержит все прототипы функций
- * драйвер lsm6dsv16x_reg.c.
- ******************************************************************
- * @внимание
+  ******************************************************************************
+  * @file    lsm6dsv16x_reg.h
+  * @author  Sensors Software Solution Team
+  * @brief   This file contains all the functions prototypes for the
+  *          lsm6dsv16x_reg.c driver.
+  ******************************************************************************
+  * @attention
   *
- * Авторские права (c) 2024 STMicroelectronics.
- * Все права защищены.
+  * Copyright (c) 2024 STMicroelectronics.
+  * All rights reserved.
   *
- * Это программное обеспечение лицензируется на условиях, которые можно найти в файле LICENSE
- * в корневом каталоге этого программного компонента.
- * Если в комплект поставки данного программного обеспечения не входит файл LICENSE, он предоставляется «КАК ЕСТЬ».
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
   *
- ******************************************************************
- */
+  ******************************************************************************
+  */
 
-/* Определите, чтобы предотвратить рекурсивное включение ----------------------------------*/
+/* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef LSM6DSV16X_REGS_H
 #define LSM6DSV16X_REGS_H
 
 #ifdef __cplusplus
-внешний "С" {
+extern "C" {
 #endif
 
-/* Включает ---------------------------------------------------------------*/
+/* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
 #include <stddef.h>
-#include <математика.h>
+#include <math.h>
 
 /** @addtogroup LSM6DSV16X
- * @{
+  * @{
   *
- */
+  */
 
 /** @defgroup endiannes_def Endianness definitions
   * @{
@@ -108,8 +108,18 @@ typedef struct
   *
   */
 
-typedef int32_t (*stmdev_write_ptr)(void *, uint8_t, const uint8_t *, uint16_t);
-typedef int32_t (*stmdev_read_ptr)(void *, uint8_t, uint8_t *, uint16_t);
+typedef int32_t (*stmdev_write_ptr)(
+  void *handle,
+  uint8_t reg,
+  const uint8_t *buf,
+  uint16_t len);
+
+typedef int32_t (*stmdev_read_ptr)(
+  void *handle,
+  uint8_t reg,
+  uint8_t *buf,
+  uint16_t len);
+
 typedef void (*stmdev_mdelay_ptr)(uint32_t millisec);
 
 typedef struct
@@ -1427,17 +1437,19 @@ typedef struct
 typedef struct
 {
 #if DRV_BYTE_ORDER == DRV_LITTLE_ENDIAN
-  uint8_t not_used0            : 3;
-  uint8_t emb_func_disable     : 1;
+  uint8_t not_used0                  : 3;
+  uint8_t emb_func_disable           : 1;
   uint8_t emb_func_irq_mask_xl_settl : 1;
   uint8_t emb_func_irq_mask_g_settl  : 1;
-  uint8_t not_used1            : 2;
+  uint8_t not_used1                  : 1;
+  uint8_t xl_dualc_batch_from_if     : 1;
 #elif DRV_BYTE_ORDER == DRV_BIG_ENDIAN
-  uint8_t not_used1            : 2;
+  uint8_t xl_dualc_batch_from_if     : 1;
+  uint8_t not_used1                  : 1;
   uint8_t emb_func_irq_mask_g_settl  : 1;
   uint8_t emb_func_irq_mask_xl_settl : 1;
-  uint8_t emb_func_disable     : 1;
-  uint8_t not_used0            : 3;
+  uint8_t emb_func_disable           : 1;
+  uint8_t not_used0                  : 3;
 #endif /* DRV_BYTE_ORDER */
 } lsm6dsv16x_emb_func_cfg_t;
 
@@ -4066,6 +4078,15 @@ float_t lsm6dsv16x_from_lsb_to_mv(int16_t lsb);
 uint32_t lsm6dsv16x_from_f16_to_f32(uint16_t val);
 
 /**
+  * @brief  Convert from FP32 to FP16 numbers (e.g. quaternions)
+  *
+  * @param  val      single-precision (32-bit) float number
+  * @retval          half-precision (16-bit) float number
+  *
+  */
+uint16_t lsm6dsv16x_from_f32_to_f16(float_t val);
+
+/**
   * @}
   *
   */
@@ -5628,6 +5649,26 @@ int32_t lsm6dsv16x_fifo_batch_cnt_event_set(const stmdev_ctx_t *ctx,
   */
 int32_t lsm6dsv16x_fifo_batch_cnt_event_get(const stmdev_ctx_t *ctx,
                                             lsm6dsv16x_fifo_batch_cnt_event_t *val);
+
+/**
+  * @brief  Sets the batching of the second accelerometer channel to the FIFO.[set]
+  *
+  * @param  ctx      read / write interface definitions
+  * @param  val      PROPERTY_ENABLE, PROPERTY_DISABLE
+  * @retval          interface status (MANDATORY: return 0 -> no Error)
+  *
+  */
+int32_t lsm6dsv16x_fifo_xl_dual_channel_batch_set(const stmdev_ctx_t *ctx, uint8_t val);
+
+/**
+  * @brief  Gets the batching of the second accelerometer channel to the FIFO.[get]
+  *
+  * @param  ctx      read / write interface definitions
+  * @param  val      PROPERTY_ENABLE, PROPERTY_DISABLE
+  * @retval          interface status (MANDATORY: return 0 -> no Error)
+  *
+  */
+int32_t lsm6dsv16x_fifo_xl_dual_channel_batch_get(const stmdev_ctx_t *ctx, uint8_t *val);
 
 typedef struct
 {
@@ -7917,7 +7958,7 @@ typedef struct
   *
   */
 int32_t lsm6dsv16x_sflp_game_gbias_set(const stmdev_ctx_t *ctx,
-                                       lsm6dsv16x_sflp_gbias_t *val);
+                                       const lsm6dsv16x_sflp_gbias_t *val);
 
 typedef enum
 {
@@ -8291,7 +8332,7 @@ typedef struct
   *
   */
 int32_t lsm6dsv16x_act_thresholds_set(const stmdev_ctx_t *ctx,
-                                      lsm6dsv16x_act_thresholds_t *val);
+                                      const lsm6dsv16x_act_thresholds_t *val);
 /**
   * @brief  Wakeup and activity/inactivity threshold.[get]
   *
