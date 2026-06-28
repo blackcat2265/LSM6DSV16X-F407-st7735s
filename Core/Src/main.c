@@ -209,6 +209,18 @@ int main(void)
     memset(&chk, 0, sizeof(chk));
     lsm6dsv16x_pin_int1_route_get(&dev_ctx, &chk);
 
+    /* Включение аппаратного SFLP (Sensor Fusion Low Power) */
+      lsm6dsv16x_fifo_sflp_raw_t sflp_batch = {0};
+      sflp_batch.sflp_gbias_out = 1; // Включить компенсацию смещения
+      sflp_batch.sflp_gravity_out = 0;
+      sflp_batch.sflp_quat_out = 1;  // Включить вывод кватерниона (TAG 0x13)
+
+      // Установка частоты обновления SFLP (должна совпадать с ODR акселерометра/гироскопа)
+      lsm6dsv16x_sflp_data_rate_set(&dev_ctx, LSM6DSV16X_SFLP_120Hz);
+
+      // Разрешение записи данных SFLP в FIFO
+      lsm6dsv16x_fifo_sflp_batch_set(&dev_ctx, sflp_batch);
+
     HAL_Delay(1);
     lsm6dsv16x_read_reg(&dev_ctx, 0x10, &ctrl1, 1);
     lsm6dsv16x_read_reg(&dev_ctx, 0x11, &ctrl2, 1);
