@@ -30,6 +30,7 @@
 #include "st7735.h"
 #include "fonts.h"
 #include <string.h>
+#include "imu_fifo.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -310,7 +311,8 @@ int main(void)
           float z_g = (float)z / 16384.0f;
 
           // 3. Обновление экрана раз в 100 мс
-          if(HAL_GetTick() - t_scr >= 100)
+
+
           {
               t_scr = HAL_GetTick();
 
@@ -372,6 +374,12 @@ int main(void)
 
               sprintf(buf, "I1:%02X", int1_ctrl);
               ST7735_WriteString(10, 130, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
+
+              if (fifo_irq)
+              {
+                  fifo_irq = 0;
+                  imu_fifo_service(&dev_ctx);
+              }
           }
 
           HAL_Delay(1);
