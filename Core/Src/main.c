@@ -270,48 +270,15 @@ int main(void)
 
       while (1)
       {
-          if (fifo_event)
-          {
-              fifo_event = 0;
-              ST7735_WriteString(105, 20, "IRQ", Font_7x10, ST7735_YELLOW, ST7735_BLACK);
-          }
+        // 1. Обработка прерывания FIFO
+        if (fifo_irq)
+        {
+          fifo_irq = 0;
+          imu_fifo_service(&dev_ctx); // Здесь данные вычитываются и очищают датчик
+        }
 
-          if(HAL_GetTick() - t_scr >= 100)
-          {
-              t_scr = HAL_GetTick();
-              sprintf(buf,"IRQ:%lu",imu_irq_cnt);
-              ST7735_WriteString(10,30,buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
-
-              HAL_Delay(100);
-          }
-
-          // 2. Чтение данных с проверкой ошибок
-          static uint8_t raw[6] = {0};
-          static uint8_t raw_g[6] = {0};
-
-          if (lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_A, raw, 6) != 0) {
-              spi_error_cnt++;
-          }
-          drdy_cnt++;
-
-          uint8_t st;
-          lsm6dsv16x_read_reg(&dev_ctx, 0x1E, &st, 1);
-          lsm6dsv16x_read_reg(&dev_ctx, LSM6DSV16X_OUTX_L_G, raw_g, 6);
-
-          int16_t x = (int16_t)((raw[1] << 8) | raw[0]);
-          int16_t y = (int16_t)((raw[3] << 8) | raw[2]);
-          int16_t z = (int16_t)((raw[5] << 8) | raw[4]);
-
-          int16_t gx = (int16_t)((raw_g[1] << 8) | raw_g[0]);
-          int16_t gy = (int16_t)((raw_g[3] << 8) | raw_g[2]);
-          int16_t gz = (int16_t)((raw_g[5] << 8) | raw_g[4]);
-
-          float x_g = (float)x / 16384.0f;
-          float y_g = (float)y / 16384.0f;
-          float z_g = (float)z / 16384.0f;
-
-          // 3. Обновление экрана раз в 100 мс
-
+          // 2. Обновление экрана раз в 100 мс
+        if(HAL_GetTick() - t_scr >= 100)
 
           {
               t_scr = HAL_GetTick();
@@ -340,7 +307,7 @@ int main(void)
               } else {
                   ST7735_WriteString(10, 160, "OK      ", Font_7x10, ST7735_GREEN, ST7735_BLACK);
               }
-
+/*
               // Вывод данных
               sprintf(buf, "INT:%lu", drdy_cnt);
               ST7735_WriteString(10, 20, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
@@ -370,8 +337,13 @@ int main(void)
               ST7735_WriteString(10, 110, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
 
               sprintf(buf, "ST:%02X", st);
-              ST7735_WriteString(10, 120, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+              sprintf(buf,"TAG:%02X",imu_last_tag);
+              ST7735_WriteString(70,120,buf,Font_7x10,ST7735_CYAN,ST7735_BLACK);
 
+              sprintf(buf,"LEV:%3u",imu_fifo_level);
+              ST7735_WriteString(70,130,buf,Font_7x10,ST7735_CYAN,ST7735_BLACK);
+              ST7735_WriteString(10, 120, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+*/
               sprintf(buf, "I1:%02X", int1_ctrl);
               ST7735_WriteString(10, 130, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
@@ -440,8 +412,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     if (GPIO_Pin == GPIO_PIN_13)  // PE13 = INT1 от LSM6DSV16X
     {
  //       accel_ready = 1;          // Флаг: новые данные готовы
-        imu_irq_cnt++;            // Счётчик прерываний
-        fifo_irq = 1;
+    	fifo_irq = 1;
+    	imu_irq_cnt++;            // Счётчик прерываний
     }
     if (GPIO_Pin == GPIO_PIN_14)      // INT2 (пока не используется)
     {
