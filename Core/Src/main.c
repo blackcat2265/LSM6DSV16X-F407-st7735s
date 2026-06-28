@@ -56,6 +56,7 @@ volatile uint32_t drdy_cnt = 0;
 volatile uint8_t accel_ready = 0;
 volatile uint32_t accel_ready_cnt = 0;
 volatile uint8_t fifo_event = 0;
+volatile uint8_t fifo_irq = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -432,7 +433,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     {
  //       accel_ready = 1;          // Флаг: новые данные готовы
         imu_irq_cnt++;            // Счётчик прерываний
-        fifo_event = 1;
+        fifo_irq = 1;
     }
     if (GPIO_Pin == GPIO_PIN_14)      // INT2 (пока не используется)
     {
