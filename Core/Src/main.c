@@ -55,6 +55,7 @@ volatile uint32_t imu_irq_cnt = 0;
 volatile uint32_t drdy_cnt = 0;
 volatile uint8_t accel_ready = 0;
 volatile uint32_t accel_ready_cnt = 0;
+volatile uint8_t fifo_event = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -178,10 +179,26 @@ int main(void)
    // lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
     lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
 
+    lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
+
+    lsm6dsv16x_fifo_xl_batch_set(
+        &dev_ctx,
+        LSM6DSV16X_XL_BATCHED_AT_120Hz);
+
+    lsm6dsv16x_fifo_gy_batch_set(
+        &dev_ctx,
+        LSM6DSV16X_GY_BATCHED_AT_120Hz);
+
+    lsm6dsv16x_fifo_mode_set(
+        &dev_ctx,
+        LSM6DSV16X_STREAM_MODE);
+
     lsm6dsv16x_pin_int_route_t int1_route;
-    memset(&int1_route, 0, sizeof(int1_route));
-    int1_route.drdy_xl = 1;
-    lsm6dsv16x_pin_int1_route_set(&dev_ctx, &int1_route);
+    memset(&int1_route,0,sizeof(int1_route));
+
+    int1_route.fifo_th = 1;
+
+    lsm6dsv16x_pin_int1_route_set(&dev_ctx,&int1_route);
 
     uint8_t int1_ctrl = 0;
     lsm6dsv16x_read_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
@@ -251,28 +268,17 @@ int main(void)
 
       while (1)
       {
-          // 1. Если датчик замёрз — автоматически перезапускаем его
-          if (!sensor_alive) {
-              sensor_alive = 1;
-              freeze_detect_cnt = 0;
+          if (fifo_event)
+          {
+              fifo_event = 0;
+              ST7735_WriteString(105, 20, "IRQ", Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+          }
 
-              // Программный сброс датчика (CTRL3 = 0x12, бит 0 = SW_RESET)
-              uint8_t rst = 0x01;
-              lsm6dsv16x_write_reg(&dev_ctx, 0x12, &rst, 1);
-              HAL_Delay(50);
-
-              // Ждём завершения сброса
-              do {
-                  lsm6dsv16x_read_reg(&dev_ctx, 0x12, &rst, 1);
-              } while (rst & 0x01);
-
-              // Повторная инициализация
-              lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
-              lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
-              lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
-
-              lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
-              lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+          if(HAL_GetTick() - t_scr >= 100)
+          {
+              t_scr = HAL_GetTick();
+              sprintf(buf,"IRQ:%lu",imu_irq_cnt);
+              ST7735_WriteString(10,30,buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
 
               HAL_Delay(100);
           }
@@ -424,8 +430,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == GPIO_PIN_13)  // PE13 = INT1 от LSM6DSV16X
     {
-        accel_ready = 1;          // Флаг: новые данные готовы
+ //       accel_ready = 1;          // Флаг: новые данные готовы
         imu_irq_cnt++;            // Счётчик прерываний
+        fifo_event = 1;
+    }
+    if (GPIO_Pin == GPIO_PIN_14)      // INT2 (пока не используется)
+    {
+ //       qvar_irq_cnt++;
     }
 }
 
