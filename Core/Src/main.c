@@ -259,40 +259,39 @@ int main(void)
 
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
-      uint32_t t_scr = 0;
-      char buf;
+    uint32_t t_scr = 0;
+    char lcd_buf; // Используем отдельный буфер для экрана
 
-      while (1)
+    while (1)
+    {
+      // 1. Обработка прерывания FIFO
+      if (fifo_irq)
       {
-        // 1. Обработка прерывания FIFO (Чтение датчика)
-        if (fifo_irq)
-        {
-          fifo_irq = 0;
-          imu_fifo_service(&dev_ctx);
-        }
+        fifo_irq = 0;
+        imu_fifo_service(&dev_ctx);
+      }
 
-        // 2. Обновление экрана (Раз в 100 мс)
-        if(HAL_GetTick() - t_scr >= 100)
-        {
-          t_scr = HAL_GetTick();
+      // 2. Обновление экрана раз в 100 мс
+      if (HAL_GetTick() - t_scr >= 100)
+      {
+        t_scr = HAL_GetTick();
 
-          // Вывод уровня заполнения FIFO для теста
-          sprintf(buf, "FIFO: %03d ", imu_data.fifo_level);
-          ST7735_WriteString(10, 50, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
+        // Вывод заполненности FIFO (из модуля imu_fifo)
+        sprintf(lcd_buf, "FIFO: %03d  ", imu_data.fifo_level);
+        ST7735_WriteString(10, 50, lcd_buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
 
-          // Текущий тег (поможет понять, идут ли данные SFLP)
-          sprintf(buf, "TAG: %02X ", imu_data.last_tag);
-          ST7735_WriteString(10, 60, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+        // Вывод последнего тега (02-XL, 01-GY, 13-SFLP)
+        sprintf(lcd_buf, "TAG:  %02X   ", imu_data.last_tag);
+        ST7735_WriteString(10, 60, lcd_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
 
-          // Диагностика прерываний
-          sprintf(buf, "IRQ: %lu ", imu_irq_cnt);
-          ST7735_WriteString(10, 30, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
+        // Счётчик прерываний для проверки связи
+        sprintf(lcd_buf, "IRQ: %lu   ", imu_irq_cnt);
+        ST7735_WriteString(10, 30, lcd_buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
 
-          // Здесь позже будет вывод Pitch/Roll
-        }
-
-        /* USER CODE END WHILE */
-
+        // Здесь будут Pitch/Roll, как только включим SFLP
+      }
+      /* USER CODE END WHILE */
+      }
 
     /* USER CODE BEGIN 3 */
     /* USER CODE END 3 */
