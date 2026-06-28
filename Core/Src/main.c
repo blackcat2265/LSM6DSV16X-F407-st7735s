@@ -260,103 +260,39 @@ int main(void)
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
       uint32_t t_scr = 0;
-      // char buf[32]; <-- ЭТУ СТРОКУ УДАЛИЛ, так как она уже есть у вас выше в коде!
-
-      // Переменные для диагностики зависания
-      static uint32_t spi_error_cnt = 0;
-      static uint32_t last_irq_cnt = 0;
-      static uint32_t freeze_detect_cnt = 0;
-      static uint8_t sensor_alive = 1;
+      char buf;
 
       while (1)
       {
-        // 1. Обработка прерывания FIFO
+        // 1. Обработка прерывания FIFO (Чтение датчика)
         if (fifo_irq)
         {
           fifo_irq = 0;
-          imu_fifo_service(&dev_ctx); // Здесь данные вычитываются и очищают датчик
+          imu_fifo_service(&dev_ctx);
         }
 
-          // 2. Обновление экрана раз в 100 мс
+        // 2. Обновление экрана (Раз в 100 мс)
         if(HAL_GetTick() - t_scr >= 100)
+        {
+          t_scr = HAL_GetTick();
 
-          {
-              t_scr = HAL_GetTick();
+          // Вывод уровня заполнения FIFO для теста
+          sprintf(buf, "FIFO: %03d ", imu_data.fifo_level);
+          ST7735_WriteString(10, 50, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
 
-              // Диагностика зависания
-              if (imu_irq_cnt == last_irq_cnt) {
-                  freeze_detect_cnt++;
-              } else {
-                  freeze_detect_cnt = 0;
-                  last_irq_cnt = imu_irq_cnt;
-              }
+          // Текущий тег (поможет понять, идут ли данные SFLP)
+          sprintf(buf, "TAG: %02X ", imu_data.last_tag);
+          ST7735_WriteString(10, 60, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
 
-              if (freeze_detect_cnt >= 50) { // 50 * 100мс = 5 секунд без новых данных
-                  sensor_alive = 0;
-              }
+          // Диагностика прерываний
+          sprintf(buf, "IRQ: %lu ", imu_irq_cnt);
+          ST7735_WriteString(10, 30, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
 
-              // Вывод диагностики
-              sprintf(buf, "E:%lu", spi_error_cnt);
-              ST7735_WriteString(10, 140, buf, Font_7x10, ST7735_RED, ST7735_BLACK);
+          // Здесь позже будет вывод Pitch/Roll
+        }
 
-              sprintf(buf, "F:%lu", freeze_detect_cnt);
-              ST7735_WriteString(10, 150, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+        /* USER CODE END WHILE */
 
-              if (!sensor_alive) {
-                  ST7735_WriteString(10, 160, "DEAD!   ", Font_7x10, ST7735_RED, ST7735_BLACK);
-              } else {
-                  ST7735_WriteString(10, 160, "OK      ", Font_7x10, ST7735_GREEN, ST7735_BLACK);
-              }
-/*
-              // Вывод данных
-              sprintf(buf, "INT:%lu", drdy_cnt);
-              ST7735_WriteString(10, 20, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "IRQ:%lu", imu_irq_cnt);
-              ST7735_WriteString(10, 30, buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
-
-              sprintf(buf, "X:%6.2f", x_g);
-              ST7735_WriteString(10, 50, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "Y:%6.2f", y_g);
-              ST7735_WriteString(10, 60, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "Z:%6.2f", z_g);
-              ST7735_WriteString(10, 70, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "D:%ld", (int32_t)(imu_irq_cnt - drdy_cnt));
-              ST7735_WriteString(10, 80, buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
-
-              sprintf(buf, "GX:%6d", gx);
-              ST7735_WriteString(10, 90, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "GY:%6d", gy);
-              ST7735_WriteString(10, 100, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "GZ:%6d", gz);
-              ST7735_WriteString(10, 110, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-              sprintf(buf, "ST:%02X", st);
-              sprintf(buf,"TAG:%02X",imu_last_tag);
-              ST7735_WriteString(70,120,buf,Font_7x10,ST7735_CYAN,ST7735_BLACK);
-
-              sprintf(buf,"LEV:%3u",imu_fifo_level);
-              ST7735_WriteString(70,130,buf,Font_7x10,ST7735_CYAN,ST7735_BLACK);
-              ST7735_WriteString(10, 120, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-*/
-              sprintf(buf, "I1:%02X", int1_ctrl);
-              ST7735_WriteString(10, 130, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
-
-              if (fifo_irq)
-              {
-                  fifo_irq = 0;
-                  imu_fifo_service(&dev_ctx);
-              }
-          }
-
-          HAL_Delay(1);
-      }
-    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
     /* USER CODE END 3 */
