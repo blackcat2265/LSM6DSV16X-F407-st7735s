@@ -30,7 +30,10 @@
 #include "st7735.h"
 #include "fonts.h"
 #include <string.h>
+#include "imu.h"
 #include "imu_fifo.h"
+#include "imu_sflp.h"
+#include "display.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -210,16 +213,17 @@ int main(void)
     lsm6dsv16x_pin_int1_route_get(&dev_ctx, &chk);
 
     /* Включение аппаратного SFLP (Sensor Fusion Low Power) */
-      lsm6dsv16x_fifo_sflp_raw_t sflp_batch = {0};
-      sflp_batch.sflp_gbias_out = 1; // Включить компенсацию смещения
-      sflp_batch.sflp_gravity_out = 0;
-      sflp_batch.sflp_quat_out = 1;  // Включить вывод кватерниона (TAG 0x13)
+    /* 1. Включение аппаратного SFLP напрямую через регистр 0x4B */
+     uint8_t sflp_ctrl_reg = 0x0A; // Включаем GBIAS (бит 1) и Кватернион (бит 3)
+     lsm6dsv16x_write_reg(&dev_ctx, 0x4B, &sflp_ctrl_reg, 1);
 
-      // Установка частоты обновления SFLP (должна совпадать с ODR акселерометра/гироскопа)
-      lsm6dsv16x_sflp_data_rate_set(&dev_ctx, LSM6DSV16X_SFLP_120Hz);
+     /* 2. Установка частоты обновления SFLP (120Hz) */
+     lsm6dsv16x_sflp_data_rate_set(&dev_ctx, LSM6DSV16X_SFLP_120Hz);
 
-      // Разрешение записи данных SFLP в FIFO
-      lsm6dsv16x_fifo_sflp_batch_set(&dev_ctx, sflp_batch);
+     /* 3. Очистка и запуск FIFO */
+     lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_BYPASS_MODE); // Сначала сброс
+     HAL_Delay(10);
+     lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE); // Затем запуск
 
     HAL_Delay(1);
     lsm6dsv16x_read_reg(&dev_ctx, 0x10, &ctrl1, 1);
@@ -242,24 +246,16 @@ int main(void)
     ST7735_Init();
     HAL_Delay(1);
 
-    ST7735_FillScreen(ST7735_RED);
-    HAL_Delay(10);
-    ST7735_FillScreen(ST7735_GREEN);
-    HAL_Delay(10);
-    ST7735_FillScreen(ST7735_BLUE);
-    HAL_Delay(10);
     ST7735_FillScreen(ST7735_BLACK);
 
-    ST7735_WriteString(10, 0, "STM32F407 OK", Font_7x10, ST7735_WHITE, ST7735_BLACK);
+    imu_init();      // Настройка SPI и базовых параметров (ODR, FS)
+    imu_sflp_init(); // Включение кватернионов и GBIAS
 
-    uint8_t txbuf[2];
-    uint8_t rxbuf[2];
-
-    txbuf[0] = 0x8F;
-    txbuf[1] = 0x00;
-
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-    HAL_SPI_TransmitReceive(&hspi2, txbuf, rxbuf, 2, 100);
+      // Настройка FIFO (Watermark = 32, запуск режима STREAM)
+      lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
+      lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
+   // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+  //  HAL_SPI_TransmitReceive(&hspi2, txbuf, rxbuf, 2, 100);
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 
     char buf[32];
@@ -271,38 +267,24 @@ int main(void)
 
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
-    uint32_t t_scr = 0;
-    char lcd_buf; // Используем отдельный буфер для экрана
+      uint32_t t_scr = 0;
 
-    while (1)
-    {
-      // 1. Обработка прерывания FIFO
-      if (fifo_irq)
+      while (1)
       {
-        fifo_irq = 0;
-        imu_fifo_service(&dev_ctx);
-      }
+        // 1. Обработка прерывания FIFO
+        if (fifo_irq)
+        {
+          fifo_irq = 0;
+          imu_fifo_service(&dev_ctx);
+        }
 
-      // 2. Обновление экрана раз в 100 мс
-      if (HAL_GetTick() - t_scr >= 100)
-      {
-        t_scr = HAL_GetTick();
-
-        // Вывод заполненности FIFO (из модуля imu_fifo)
-        sprintf(lcd_buf, "FIFO: %03d  ", imu_data.fifo_level);
-        ST7735_WriteString(10, 50, lcd_buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
-
-        // Вывод последнего тега (02-XL, 01-GY, 13-SFLP)
-        sprintf(lcd_buf, "TAG:  %02X   ", imu_data.last_tag);
-        ST7735_WriteString(10, 60, lcd_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
-
-        // Счётчик прерываний для проверки связи
-        sprintf(lcd_buf, "IRQ: %lu   ", imu_irq_cnt);
-        ST7735_WriteString(10, 30, lcd_buf, Font_7x10, ST7735_MAGENTA, ST7735_BLACK);
-
-        // Здесь будут Pitch/Roll, как только включим SFLP
-      }
-      /* USER CODE END WHILE */
+        // 2. Обновление экрана раз в 100 мс
+        if (HAL_GetTick() - t_scr >= 100)
+        {
+          t_scr = HAL_GetTick();
+          display_update(imu_irq_cnt); // Вся логика sprintf и вывода строк теперь внутри display.c
+        }
+        /* USER CODE END WHILE */
       }
 
     /* USER CODE BEGIN 3 */
