@@ -139,11 +139,7 @@ int main(void)
       // Включаем запись данных акселерометра в FIFO (чтобы увидеть тег 02)
       lsm6dsv16x_fifo_xl_batch_set(&dev_ctx, LSM6DSV16X_XL_BATCHED_AT_120Hz);
 
-      /* 3. Очистка и запуск FIFO (у вас это уже есть, проверьте порядок) */
-      lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
-      lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
-
-      // Настройка FIFO (Watermark = 32, запуск режима STREAM)
+      /* 3. Настройка FIFO (Watermark = 32, запуск режима STREAM) */
       lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
       lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
 
@@ -152,6 +148,19 @@ int main(void)
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
       uint32_t t_scr = 0;
+
+      /* Проверка: записалась ли частота обновления (ODR) */
+        lsm6dsv16x_data_rate_t odr_check;
+        lsm6dsv16x_xl_data_rate_get(&dev_ctx, &odr_check);
+
+        if (odr_check == LSM6DSV16X_ODR_OFF) {
+            // Если мы здесь, значит запись ODR не прошла!
+            // Проблема в SPI_Transmit или в функции platform_write.
+            ST7735_WriteString(10, 100, "ERR: SENSOR OFF", Font_7x10, ST7735_RED, ST7735_BLACK);
+        } else {
+            ST7735_WriteString(10, 100, "SENSOR ACTIVE", Font_7x10, ST7735_GREEN, ST7735_BLACK);
+        }
+
       while (1)
       {
         // 1. Обработка прерывания FIFO

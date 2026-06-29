@@ -9,13 +9,14 @@ stmdev_ctx_t dev_ctx; // Реальное создание переменной 
 
 static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
 {
-    uint8_t tx_buf[33];
-    tx_buf[0] = reg;
-    if (len > 1) tx_buf[0] |= 0x40; // IF_INC
-    memcpy(&tx_buf[1], bufp, len);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-    HAL_StatusTypeDef status = HAL_SPI_Transmit(handle, tx_buf, len + 1, 100);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+    uint8_t tx_buf[33]; // Создаем массив на 33 байта (индекс 33 в скобках)
+    tx_buf[0] = reg; // 1. В самую первую ячейку (индекс 0) кладем только адрес регистра
+   // if (len > 1) tx_buf[0] |= 0x40; // IF_INC
+   // memcpy(&tx_buf[1], bufp, len);
+    memcpy(&tx_buf[1], bufp, len); // 2. Копируем данные из bufp в массив, начиная со ВТОРОЙ ячейки (индекс 1)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET); // CS в 0
+    HAL_StatusTypeDef status = HAL_SPI_Transmit(handle, tx_buf, len + 1, 100); // 3. Передаем всё за один раз: адрес (1 байт) + данные (len байт)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET); // CS в 1
     return (status == HAL_OK) ? 0 : -1;
 }
 
