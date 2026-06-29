@@ -7,11 +7,12 @@ extern SPI_HandleTypeDef hspi2; // Говорим файлу, что SPI объ�
 
 stmdev_ctx_t dev_ctx; // Реальное создание переменной здесь
 
-static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len) {
-    uint8_t tx_buf;
-    tx_buf = reg;
-    if (len > 1) tx_buf |= 0x40; // IF_INC [5]
-    memcpy(&tx_buf[6], bufp, len);
+static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
+{
+    uint8_t tx_buf[33];
+    tx_buf[0] = reg;
+    if (len > 1) tx_buf[0] |= 0x40; // IF_INC
+    memcpy(&tx_buf[1], bufp, len);
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
     HAL_StatusTypeDef status = HAL_SPI_Transmit(handle, tx_buf, len + 1, 100);
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
@@ -32,7 +33,7 @@ void imu_init(void) {
     dev_ctx.read_reg = platform_read;
     dev_ctx.handle = &hspi2;
 
-    lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g); [4]
-    lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz); [4]
-    lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz); [1]
+    lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
+    lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+    lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
 }

@@ -113,8 +113,12 @@ int main(void)
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
     HAL_Delay(1);
 
-    dev_ctx.write_reg = platform_write;
-    dev_ctx.read_reg = platform_read;
+    // Запуск ШИМ для подсветки (обычно TIM_CHANNEL_1 или 2)
+      HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+
+      // Установка яркости на 100% (если период таймера равен 100 или 1000)
+      __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 400);
+
 
     HAL_Delay(1);
     ST7735_Init();
@@ -125,6 +129,20 @@ int main(void)
     imu_init();      // Настройка SPI и базовых параметров (ODR, FS)
     imu_sflp_init(); // Включение кватернионов и GBIAS
 
+    /* 1. Настройка маршрутизации прерывания на ножку INT1 */
+      lsm6dsv16x_pin_int_route_t pin_route = {0}; // Используем имя типа без цифры '1'
+      // Мы говорим датчику: "Когда FIFO заполнится до Watermark, подай сигнал на INT1"
+      pin_route.fifo_th = 1; // Прерывание по достижению Watermark
+      lsm6dsv16x_pin_int1_route_set(&dev_ctx, &pin_route);
+
+      /* 2. Настройка того, ЧТО записывать в FIFO */
+      // Включаем запись данных акселерометра в FIFO (чтобы увидеть тег 02)
+      lsm6dsv16x_fifo_xl_batch_set(&dev_ctx, LSM6DSV16X_XL_BATCHED_AT_120Hz);
+
+      /* 3. Очистка и запуск FIFO (у вас это уже есть, проверьте порядок) */
+      lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
+      lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
+
       // Настройка FIFO (Watermark = 32, запуск режима STREAM)
       lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
       lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
@@ -133,6 +151,7 @@ int main(void)
 
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
+      uint32_t t_scr = 0;
       while (1)
       {
         // 1. Обработка прерывания FIFO

@@ -6,7 +6,7 @@
 #include "imu.h" // Нужно для доступа к dev_ctx
 
 void display_update(uint32_t irq_cnt) {
-    char buf;
+    char buf[64];
     // 1. Вывод уровня FIFO
        sprintf(buf, "FIFO: %03d  ", imu_data.fifo_level);
        ST7735_WriteString(10, 50, buf, Font_7x10, ST7735_WHITE, ST7735_BLACK);
