@@ -139,6 +139,11 @@ int main(void)
       // Включаем запись данных акселерометра в FIFO (чтобы увидеть тег 02)
       lsm6dsv16x_fifo_xl_batch_set(&dev_ctx, LSM6DSV16X_XL_BATCHED_AT_120Hz);
 
+      // --- ДОБАВЬТЕ ЭТИ СТРОКИ ДЛЯ TAG 13 ---
+        uint8_t fifo_ctrl4 = 0x08; // Бит 3 отвечает за SFLP batching
+        lsm6dsv16x_write_reg(&dev_ctx, 0x0A, &fifo_ctrl4, 1);
+        // --------------------------------------
+
       /* 3. Настройка FIFO (Watermark = 32, запуск режима STREAM) */
       lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
       lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
@@ -153,13 +158,45 @@ int main(void)
         lsm6dsv16x_data_rate_t odr_check;
         lsm6dsv16x_xl_data_rate_get(&dev_ctx, &odr_check);
 
-        if (odr_check == LSM6DSV16X_ODR_OFF) {
+        if (odr_check == LSM6DSV16X_ODR_OFF)
+        {
             // Если мы здесь, значит запись ODR не прошла!
             // Проблема в SPI_Transmit или в функции platform_write.
             ST7735_WriteString(10, 100, "ERR: SENSOR OFF", Font_7x10, ST7735_RED, ST7735_BLACK);
-        } else {
+        } else
+        {
             ST7735_WriteString(10, 100, "SENSOR ACTIVE", Font_7x10, ST7735_GREEN, ST7735_BLACK);
         }
+
+        /* --- ВСТАВЬТЕ ЭТОТ БЛОК ТУТ --- */
+            uint8_t r4b = 0, r0a = 0;
+            char d_buf; // Локальный буфер для диагностики
+
+            // Читаем статус алгоритма SFLP и настройки FIFO
+            lsm6dsv16x_read_reg(&dev_ctx, 0x4B, &r4b, 1);
+            lsm6dsv16x_read_reg(&dev_ctx, 0x0A, &r0a, 1);
+
+            sprintf(d_buf, "REG4B: %02X", r4b);
+            ST7735_WriteString(10, 110, d_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+
+            sprintf(d_buf, "REG0A: %02X", r0a);
+            ST7735_WriteString(10, 120, d_buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
+            /* ------------------------------ */
+
+        /* Проверка регистра 0x4B (SFLP_CTRL1) — включен ли сам алгоритм */
+          uint8_t reg_4b = 0;
+          char diag_buf; // 1. ОБЪЯВЛЯЕМ локальный буфер для диагностики
+
+          lsm6dsv16x_read_reg(&dev_ctx, 0x4B, &reg_4b, 1);
+          sprintf(diag_buf, "REG4B: %02X", reg_4b);
+          ST7735_WriteString(10, 110, diag_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+
+          /* Проверка регистра 0x0A (FIFO_CTRL4) — включен ли батчинг SFLP */
+          uint8_t reg_0a = 0;
+          lsm6dsv16x_read_reg(&dev_ctx, 0x0A, &reg_0a, 1);
+          sprintf(diag_buf, "REG0A: %02X", reg_0a);
+          // 2. ЗАМЕНИЛИ ST7735_ORANGE на ST7735_CYAN (или ST7735_MAGENTA)
+          ST7735_WriteString(10, 120, diag_buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
 
       while (1)
       {
