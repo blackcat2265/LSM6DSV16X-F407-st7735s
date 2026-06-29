@@ -183,21 +183,6 @@ int main(void)
             ST7735_WriteString(10, 120, d_buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
             /* ------------------------------ */
 
-        /* Проверка регистра 0x4B (SFLP_CTRL1) — включен ли сам алгоритм */
-          uint8_t reg_4b = 0;
-          char diag_buf; // 1. ОБЪЯВЛЯЕМ локальный буфер для диагностики
-
-          lsm6dsv16x_read_reg(&dev_ctx, 0x4B, &reg_4b, 1);
-          sprintf(diag_buf, "REG4B: %02X", reg_4b);
-          ST7735_WriteString(10, 110, diag_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
-
-          /* Проверка регистра 0x0A (FIFO_CTRL4) — включен ли батчинг SFLP */
-          uint8_t reg_0a = 0;
-          lsm6dsv16x_read_reg(&dev_ctx, 0x0A, &reg_0a, 1);
-          sprintf(diag_buf, "REG0A: %02X", reg_0a);
-          // 2. ЗАМЕНИЛИ ST7735_ORANGE на ST7735_CYAN (или ST7735_MAGENTA)
-          ST7735_WriteString(10, 120, diag_buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
-
       while (1)
       {
         // 1. Обработка прерывания FIFO
