@@ -54,7 +54,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-stmdev_ctx_t dev_ctx;
+
 volatile uint32_t imu_irq_cnt = 0;
 volatile uint32_t drdy_cnt = 0;
 volatile uint8_t accel_ready = 0;
@@ -71,42 +71,7 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
-{
-    uint8_t tx_buf[33];
 
-    tx_buf[0] = reg;
-    if (len > 1) {
-        tx_buf[0] |= 0x40;
-    }
-    memcpy(&tx_buf[1], bufp, len);
-
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-    HAL_StatusTypeDef status = HAL_SPI_Transmit(handle, tx_buf, len + 1, 100);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-
-    return (status == HAL_OK) ? 0 : -1;
-}
-
-static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len)
-{
-    uint8_t tx_buf[33];
-    uint8_t rx_buf[33];
-
-    tx_buf[0] = reg | 0x80;
-    memset(&tx_buf[1], 0x00, len);
-
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(handle, tx_buf, rx_buf, len + 1, 100);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-
-    if (status != HAL_OK) {
-        return -1;
-    }
-
-    memcpy(bufp, &rx_buf[1], len);
-    return 0;
-}
 /* USER CODE END 0 */
 
 /**
@@ -150,97 +115,6 @@ int main(void)
 
     dev_ctx.write_reg = platform_write;
     dev_ctx.read_reg = platform_read;
-    dev_ctx.handle = &hspi2;
-/*
-    lsm6dsv16x_reset_set(&dev_ctx, 1); // програмный сброс датчика
-    uint8_t rst;
-    do
-    {
-        lsm6dsv16x_reset_get(&dev_ctx, &rst);
-    }
-    while(rst);
-*/
-/*Для пакетного чтения по SPI необходимо включить параметр IF_INC*/
-    /*Включить IF_INC (автоматическое увеличение регистра)
-* Требуется для пакетного чтения: * 0x28 -> 0x29 -> 0x2A ->*/
-    uint8_t reg;
-    /* IF_INC = 1 */
-    lsm6dsv16x_read_reg(&dev_ctx, 0x12, &reg, 1);
-    reg |= 0x04;
-    lsm6dsv16x_write_reg(&dev_ctx, 0x12, &reg, 1);
-
-    HAL_Delay(1);
-    //uint8_t reg = 0;
-    uint8_t ctrl1 = 0;
-    uint8_t ctrl2 = 0;
-    uint8_t status = 0;
-
-    lsm6dsv16x_xl_full_scale_set(&dev_ctx, LSM6DSV16X_2g);
-    lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
-   // lsm6dsv16x_xl_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
-    lsm6dsv16x_xl_mode_set(&dev_ctx, LSM6DSV16X_XL_HIGH_PERFORMANCE_MD);
-
-    lsm6dsv16x_gy_full_scale_set(&dev_ctx, LSM6DSV16X_250dps);
-   // lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_7680Hz);
-    lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
-
-    lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
-
-    lsm6dsv16x_fifo_xl_batch_set(
-        &dev_ctx,
-        LSM6DSV16X_XL_BATCHED_AT_120Hz);
-
-    lsm6dsv16x_fifo_gy_batch_set(
-        &dev_ctx,
-        LSM6DSV16X_GY_BATCHED_AT_120Hz);
-
-    lsm6dsv16x_fifo_mode_set(
-        &dev_ctx,
-        LSM6DSV16X_STREAM_MODE);
-
-    lsm6dsv16x_pin_int_route_t int1_route;
-    memset(&int1_route,0,sizeof(int1_route));
-
-    int1_route.fifo_th = 1;
-
-    lsm6dsv16x_pin_int1_route_set(&dev_ctx,&int1_route);
-
-    uint8_t int1_ctrl = 0;
-    lsm6dsv16x_read_reg(&dev_ctx, 0x0D, &int1_ctrl, 1);
-
-    lsm6dsv16x_pin_int_route_t chk;
-    memset(&chk, 0, sizeof(chk));
-    lsm6dsv16x_pin_int1_route_get(&dev_ctx, &chk);
-
-    /* Включение аппаратного SFLP (Sensor Fusion Low Power) */
-    /* 1. Включение аппаратного SFLP напрямую через регистр 0x4B */
-     uint8_t sflp_ctrl_reg = 0x0A; // Включаем GBIAS (бит 1) и Кватернион (бит 3)
-     lsm6dsv16x_write_reg(&dev_ctx, 0x4B, &sflp_ctrl_reg, 1);
-
-     /* 2. Установка частоты обновления SFLP (120Hz) */
-     lsm6dsv16x_sflp_data_rate_set(&dev_ctx, LSM6DSV16X_SFLP_120Hz);
-
-     /* 3. Очистка и запуск FIFO */
-     lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_BYPASS_MODE); // Сначала сброс
-     HAL_Delay(10);
-     lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE); // Затем запуск
-
-    HAL_Delay(1);
-    lsm6dsv16x_read_reg(&dev_ctx, 0x10, &ctrl1, 1);
-    lsm6dsv16x_read_reg(&dev_ctx, 0x11, &ctrl2, 1);
-    lsm6dsv16x_read_reg(&dev_ctx, 0x1E, &status, 1);
-
-    // Отладка: читаем WHO_AM_I напрямую
-    uint8_t who_am_i = 0;
-    lsm6dsv16x_read_reg(&dev_ctx, 0x0F, &who_am_i, 1);
-
-    char debug_buf[64];
-    sprintf(debug_buf, "WHO:%02X CS:%d", who_am_i, HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12));
-    HAL_UART_Transmit(&huart1, (uint8_t*)debug_buf, strlen(debug_buf), 100);
-    HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, 100);
-
-    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 500);
 
     HAL_Delay(1);
     ST7735_Init();
@@ -254,21 +128,11 @@ int main(void)
       // Настройка FIFO (Watermark = 32, запуск режима STREAM)
       lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
       lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
-   // HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
-  //  HAL_SPI_TransmitReceive(&hspi2, txbuf, rxbuf, 2, 100);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
-
-    char buf[32];
-
-    sprintf(buf, "C1:%02X C2:%02X", ctrl1, ctrl2);
-    ST7735_WriteString(10, 10, buf, Font_7x10, ST7735_GREEN, ST7735_BLACK);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
-      uint32_t t_scr = 0;
-
       while (1)
       {
         // 1. Обработка прерывания FIFO

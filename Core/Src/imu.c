@@ -1,8 +1,11 @@
+#include "main.h"
 #include "imu.h"
+#include "spi.h"
 #include <string.h>
 #include "main.h" // Для доступа к hspi2
+extern SPI_HandleTypeDef hspi2; // Говорим файлу, что SPI объявлен в другом месте (в main.c)
 
-stmdev_ctx_t dev_ctx;
+stmdev_ctx_t dev_ctx; // Реальное создание переменной здесь
 
 static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len) {
     uint8_t tx_buf;
