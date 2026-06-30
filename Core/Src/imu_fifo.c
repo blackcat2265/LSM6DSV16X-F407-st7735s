@@ -11,19 +11,24 @@ volatile uint8_t fifo_event = 0;
 
 void imu_fifo_init(stmdev_ctx_t *ctx)
 {
-    // 1. Настройка маршрутизации прерывания на ножку INT1
+    // === 0. СБРОС FIFO ===
+    uint8_t fifo_reset = 0x01;
+    lsm6dsv16x_write_reg(ctx, 0x09, &fifo_reset, 1);
+    HAL_Delay(10);
+
+    // === 1. Маршрутизация прерывания на INT1 ===
     lsm6dsv16x_pin_int_route_t pin_route = {0};
     pin_route.fifo_th = 1;
     lsm6dsv16x_pin_int1_route_set(ctx, &pin_route);
 
-    // 2. Настройка того, ЧТО записывать в FIFO
+    // === 2. Настройка данных для FIFO ===
     lsm6dsv16x_fifo_xl_batch_set(ctx, LSM6DSV16X_XL_BATCHED_AT_120Hz);
 
-    // Включение SFLP batching (TAG 13)
+    // === 3. Включение SFLP batching (TAG:0x13) ===
     uint8_t fifo_ctrl4 = 0x08;
     lsm6dsv16x_write_reg(ctx, 0x0A, &fifo_ctrl4, 1);
 
-    // 3. Настройка FIFO (Watermark = 32, запуск режима STREAM)
+    // === 4. Настройка FIFO ===
     lsm6dsv16x_fifo_watermark_set(ctx, 32);
     lsm6dsv16x_fifo_mode_set(ctx, LSM6DSV16X_STREAM_MODE);
 }

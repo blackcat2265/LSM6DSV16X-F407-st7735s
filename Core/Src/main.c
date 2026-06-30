@@ -38,38 +38,31 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
 volatile uint32_t drdy_cnt = 0;
 volatile uint8_t accel_ready = 0;
 volatile uint32_t accel_ready_cnt = 0;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 /* USER CODE END 0 */
 
 /**
@@ -78,9 +71,7 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -89,14 +80,12 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -146,11 +135,9 @@ int main(void)
       lsm6dsv16x_fifo_watermark_set(&dev_ctx, 32);
       lsm6dsv16x_fifo_mode_set(&dev_ctx, LSM6DSV16X_STREAM_MODE);
 */
-
     imu_fifo_init(&dev_ctx);
 
   /* USER CODE END 2 */
-
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
       uint32_t t_scr = 0;
@@ -191,7 +178,6 @@ int main(void)
           fifo_irq = 0;
           imu_fifo_service(&dev_ctx);
         }
-
         // 2. Обновление экрана раз в 100 мс
         if (HAL_GetTick() - t_scr >= 100)
         {
@@ -233,7 +219,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -248,7 +233,6 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 }
-
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
@@ -263,7 +247,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
  //       qvar_irq_cnt++;
     }
 }
-
 /* USER CODE END 4 */
 
 /**
