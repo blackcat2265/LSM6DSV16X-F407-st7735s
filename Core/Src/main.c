@@ -140,51 +140,38 @@ int main(void)
   /* USER CODE END 2 */
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
-      uint32_t t_scr = 0;
+    uint32_t t_scr = 0;
+    char d_buf[32]; // Массив для текста
 
-      /* Проверка: записалась ли частота обновления (ODR) */
-        lsm6dsv16x_data_rate_t odr_check;
-        lsm6dsv16x_xl_data_rate_get(&dev_ctx, &odr_check);
-
-        if (odr_check == LSM6DSV16X_ODR_OFF)
-        {
-            // Если мы здесь, значит запись ODR не прошла!
-            // Проблема в SPI_Transmit или в функции platform_write.
-            ST7735_WriteString(10, 100, "ERR: SENSOR OFF", Font_7x10, ST7735_RED, ST7735_BLACK);
-        } else
-        {
-            ST7735_WriteString(10, 100, "SENSOR ACTIVE", Font_7x10, ST7735_GREEN, ST7735_BLACK);
-        }
-
-        /* --- ВСТАВЬТЕ ЭТОТ БЛОК ТУТ --- */
-            uint8_t r4b = 0, r0a = 0;
-            char d_buf; // Локальный буфер для диагностики
-
-            // Читаем статус алгоритма SFLP и настройки FIFO
-            imu_fifo_get_registers(&dev_ctx, &r4b, &r0a);
-
-            sprintf(d_buf, "REG4B: %02X", r4b);
-            ST7735_WriteString(10, 110, d_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
-
-            sprintf(d_buf, "REG0A: %02X", r0a);
-            ST7735_WriteString(10, 120, d_buf, Font_7x10, ST7735_CYAN, ST7735_BLACK);
-            /* ------------------------------ */
-
-      while (1)
-      {
-        // 1. Обработка прерывания FIFO
+    while (1)
+    {
         if (fifo_irq)
         {
-          fifo_irq = 0;
-          imu_fifo_service(&dev_ctx);
+            fifo_irq = 0;
+            imu_fifo_service(&dev_ctx);
         }
-        // 2. Обновление экрана раз в 100 мс
+
         if (HAL_GetTick() - t_scr >= 100)
         {
-          t_scr = HAL_GetTick();
-          display_update(imu_irq_cnt); // Вся логика sprintf и вывода строк теперь внутри display.c
+            t_scr = HAL_GetTick();
+
+            // 1. ВКЛЮЧАЕМ ГИРОСКОП (Обязательно для TAG 13)
+            lsm6dsv16x_gy_data_rate_set(&dev_ctx, LSM6DSV16X_ODR_AT_120Hz);
+
+            // 2. ОБНОВЛЯЕМ ЭКРАН (ID, FIFO, TAG)
+            display_update(imu_irq_cnt);
+
+            // 3. ДИАГНОСТИКА (REG4B должен быть 0A, REG0A должен быть 08)
+            uint8_t r4b = 0, r0a = 0;
+            lsm6dsv16x_read_reg(&dev_ctx, 0x4B, &r4b, 1);
+            lsm6dsv16x_read_reg(&dev_ctx, 0x0A, &r0a, 1);
+
+            sprintf(d_buf, "R4B:%02X R0A:%02X", r4b, r0a);
+            ST7735_WriteString(10, 110, d_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
         }
-        /* USER CODE END WHILE */
+
+
+    /* USER CODE END WHILE */
       }
 
     /* USER CODE BEGIN 3 */
