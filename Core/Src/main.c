@@ -141,34 +141,33 @@ int main(void)
   /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     uint32_t t_scr = 0;
-    char d_buf;
+    char d_buf[32];
 
     while (1)
-    {
-      if (fifo_irq) // 1. Сервис ТЕПЕРЬ СТРОГО ВНУТРИ
       {
-        fifo_irq = 0;
-        imu_fifo_service(&dev_ctx);
-      }
+        if (fifo_irq)
+        {
+          fifo_irq = 0;
+          imu_fifo_service(&dev_ctx); // Теперь строго внутри условия
+        }
 
-      if (HAL_GetTick() - t_scr >= 100) // 2. Отрисовка ТЕПЕРЬ СТРОГО ТУТ
-      {
-        t_scr = HAL_GetTick();
+        if (HAL_GetTick() - t_scr >= 100)
+        {
+          t_scr = HAL_GetTick();
 
-        // Принудительно включаем алгоритм (чтобы R4B стал 0A)
-        uint8_t sflp_on = 0x0A;
-        lsm6dsv16x_write_reg(&dev_ctx, 0x4B, &sflp_on, 1);
+          // Заставляем SFLP проснуться
+          uint8_t sflp_force = 0x0A;
+          lsm6dsv16x_write_reg(&dev_ctx, 0x4B, &sflp_force, 1);
 
-        display_update(imu_irq_cnt);
+          display_update(imu_irq_cnt);
 
-        uint8_t r4b = 0, r0a = 0;
-        lsm6dsv16x_read_reg(&dev_ctx, 0x4B, &r4b, 1);
-        lsm6dsv16x_read_reg(&dev_ctx, 0x0A, &r0a, 1);
+          uint8_t r4b_val = 0, r0a_val = 0;
+          lsm6dsv16x_read_reg(&dev_ctx, 0x4B, &r4b_val, 1);
+          lsm6dsv16x_read_reg(&dev_ctx, 0x0A, &r0a_val, 1);
 
-        sprintf(d_buf, "R4B:%02X R0A:%02X", r4b, r0a);
-        ST7735_WriteString(10, 110, d_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
-      }
-
+          sprintf(d_buf, "R4B:%02X R0A:%02X", r4b_val, r0a_val);
+          ST7735_WriteString(10, 110, d_buf, Font_7x10, ST7735_YELLOW, ST7735_BLACK);
+        }
 
     /* USER CODE END WHILE */
       }
